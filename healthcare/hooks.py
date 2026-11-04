@@ -43,6 +43,13 @@ app_include_js = "healthcare.bundle.js"
 doctype_js = {
 	"Sales Invoice": "public/js/sales_invoice.js",
 	"Healthcare Practitioner": "public/js/healthcare_practitioner.js",
+	"Patient": "public/js/patient_abdm.js",
+	# ABHA Record's own "Delete/Deactivate/Reactivate via ABDM" buttons (see
+	# doctype/abha_record/abha_record.js) call healthcare.regional.india.abdm.
+	# AbhaLifecycleDialog, defined in this same file — without it loaded here
+	# too, that class doesn't exist on the ABHA Record form and the buttons
+	# throw immediately on click.
+	"ABHA Record": "public/js/patient_abdm.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -63,6 +70,10 @@ doctype_js = {
 # doctype on every login, so admin changes in the Role UI take effect
 # immediately without any code change.
 on_login = "healthcare.healthcare.auth.set_role_based_home_page"
+
+# ABDM Token Registry cleanup on login/logout
+on_session_creation = "healthcare.regional.india.abdm.auth.on_session_creation"
+on_logout = "healthcare.regional.india.abdm.auth.on_logout"
 
 # Generators
 # ----------
@@ -95,6 +106,11 @@ before_uninstall = "healthcare.uninstall.before_uninstall"
 after_uninstall = "healthcare.uninstall.after_uninstall"
 after_migrate = "healthcare.after_migrate.execute_migrate"
 
+# ABDM: strip stack traces from ABDM error responses; secure response headers
+# (HSTS, X-Frame-Options, CSP, X-Content-Type-Options) on every response
+after_exception = ["healthcare.regional.india.abdm.utils.error_handler.handle_abdm_exception"]
+after_request = ["healthcare.regional.india.abdm.utils.secure_headers.add_security_headers"]
+
 # Desk Notifications
 # ------------------
 # See frappe.core.notifications.get_notification_config
@@ -122,6 +138,11 @@ after_migrate = "healthcare.after_migrate.execute_migrate"
 
 override_doctype_class = {
 	"Sales Invoice": "healthcare.healthcare.custom_doctype.sales_invoice.HealthcareSalesInvoice",
+	# Frappe v16 bug: AuditTrail.get_amended_documents() queries 'amended_from' on every
+	# doctype, but non-amendable doctypes (Patient, ABHA Record, etc.) have no such column —
+	# causing MySQL OperationalError (1054) whenever the Audit Trail form runs compare_document
+	# on those records. SafeAuditTrail short-circuits for non-amendable doctypes.
+	"Audit Trail": "healthcare.regional.india.abdm.utils.frappe_patches.SafeAuditTrail",
 }
 
 # Document Events
@@ -143,7 +164,9 @@ doc_events = {
 		"after_insert": "healthcare.healthcare.utils.create_healthcare_service_unit_tree_root",
 		"on_trash": "healthcare.healthcare.utils.company_on_trash",
 	},
-	"Patient": {"after_insert": "healthcare.regional.india.abdm.utils.set_consent_attachment_details"},
+	"Patient": {
+		"on_trash": "healthcare.regional.india.abdm.utils.patient_hooks.cleanup_abdm_data_before_patient_delete",
+	},
 	"Payment Entry": {
 		"on_submit": [
 			"healthcare.healthcare.custom_doctype.payment_entry.manage_payment_entry_submit_cancel",
@@ -161,11 +184,16 @@ scheduler_events = {
 	"all": [
 		"healthcare.healthcare.doctype.patient_appointment.patient_appointment.send_appointment_reminder",
 	],
+	"hourly": [
+		"healthcare.regional.india.abdm.tasks.notify_expiring_tokens",   # warn when X-token < 2 h left
+	],
 	"daily": [
 		"healthcare.healthcare.doctype.patient_appointment.patient_appointment.update_appointment_status",
 		"healthcare.healthcare.doctype.fee_validity.fee_validity.update_validity_status",
 		"healthcare.healthcare.doctype.inpatient_record.inpatient_record.add_occupied_service_unit_in_ip_to_billables",
 		"healthcare.healthcare.doctype.medication_request.medication_request.update_expired_medication_requests",
+		"healthcare.regional.india.abdm.tasks.refresh_expiring_tokens",  # clear expired X-tokens
+		"healthcare.regional.india.abdm.tasks.purge_gateway_token_cache", # force fresh gateway token daily
 	],
 }
 
@@ -201,6 +229,13 @@ before_tests = "healthcare.healthcare.utils.before_tests"
 # override_whitelisted_methods = {
 # 	"frappe.desk.doctype.event.event.get_events": "healthcare.event.get_events"
 # }
+#
+# Frappe v16 workaround: get_list_settings() called without `doctype` on some list
+# navigations (Frappe bug — TypeError pollutes Error Log). Our shim returns None
+# gracefully instead of raising, matching the no-settings path.
+override_whitelisted_methods = {
+	"frappe.desk.listview.get_list_settings": "healthcare.regional.india.abdm.utils.frappe_patches.safe_get_list_settings",
+}
 #
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,
