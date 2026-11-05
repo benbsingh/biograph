@@ -14,24 +14,6 @@ _PERM_TYPES = (
 )  # fmt: skip
 
 
-def log_deferred(title, detail):
-	"""Log to Error Log through Redis (it survives the request's rollback), without the request's arguments.
-
-	frappe.log_error also stores sanitized_dict(frappe.form_dict) in Error Log.metadata, and that only masks keys such
-	as password, token or key. A kiosk request's arguments (name, dob, mobile, aadhaar, otp, ABHA address) would be
-	stored in clear text, so the form_dict is swapped for an empty one for the duration of the call. Callers pass a
-	title and a class name, never patient data. A logging failure (Redis down) never replaces the caller's answer.
-	"""
-	saved = frappe.local.form_dict
-	frappe.local.form_dict = frappe._dict()
-	try:
-		frappe.log_error(title=title, message=detail, defer_insert=True)
-	except Exception:
-		pass
-	finally:
-		frappe.local.form_dict = saved
-
-
 def ensure_kiosk_role_and_permissions():
 	# Every migrate resets the Kiosk rows to create-only on purpose: this is a security boundary, so a loosened
 	# (or tightened) Custom DocPerm made by hand in Role Permission Manager does not survive.
@@ -57,6 +39,8 @@ def _ensure_one_token_per_patient_per_day():
 		for name in extras:
 			frappe.delete_doc("Kiosk Token", name, ignore_permissions=True, force=True)
 		if extras:
+			from healthcare.api.kiosk_common import log_deferred  # late: kiosk_common imports this module
+
 			log_deferred("Kiosk Token duplicates removed", f"{len(extras)} duplicate token(s)")
 		frappe.db.add_unique("Kiosk Token", ["patient", "token_date"], constraint_name="unique_kiosk_token_patient_day")
 

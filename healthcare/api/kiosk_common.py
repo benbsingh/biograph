@@ -11,7 +11,7 @@ import frappe
 from frappe import _
 from frappe.utils import getdate, nowdate
 
-from healthcare.kiosk_setup import KIOSK_ROLE, log_deferred
+from healthcare.kiosk_setup import KIOSK_ROLE
 from healthcare.regional.india.abdm.utils.http_guards import require_post
 
 # Slack on top of the idle timeout so a patient finishing at the last second keeps their session.
@@ -42,6 +42,34 @@ def get_enabled_settings():
 	if not settings.enabled:
 		frappe.throw(_("Kiosk unavailable"), frappe.ValidationError)
 	return settings
+
+
+def log_deferred(title, detail):
+	"""Log to Error Log through Redis (it survives the request's rollback), without the request's arguments.
+
+	frappe.log_error also stores sanitized_dict(frappe.form_dict) in Error Log.metadata, and that only masks keys such
+	as password, token or key. A kiosk request's arguments (name, dob, mobile, aadhaar, otp, ABHA address) would be
+	stored in clear text, so the form_dict is swapped for an empty one for the duration of the call. Callers pass a
+	title and a class name, never patient data. A logging failure (Redis down) never replaces the caller's answer.
+
+	The guarantee covers the kiosk's own logging only, and holds with developer_mode off and the Frappe Recorder off:
+	in developer_mode Frappe snapshots every exception with the real form_dict, and the Recorder stores it too.
+	"""
+	saved = None
+	swapped = False
+	try:
+		saved = frappe.local.form_dict
+		frappe.local.form_dict = frappe._dict()
+		swapped = True
+		frappe.log_error(title=title, message=detail, defer_insert=True)
+	except Exception as e:
+		try:
+			frappe.logger("kiosk").error("%s: log failed (%s)", title, type(e).__name__)  # class only, no patient data
+		except Exception:
+			pass
+	finally:
+		if swapped:
+			frappe.local.form_dict = saved
 
 
 def refuse(title, detail, message):

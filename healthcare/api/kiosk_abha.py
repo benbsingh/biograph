@@ -10,6 +10,11 @@ create-only Kiosk role does not have, and that guard stays exactly as it is. The
   4. answer with an allow-list: a txn id, a status, masked values. No token, profile, full ABHA number or
      Aadhaar ever leaves the server through here, and M1's own error text (which can name other patients)
      is replaced by a generic message.
+
+Known limitation: the M1 code (regional/, deliberately untouched here) writes ABDM response bodies and exception
+text to Error Log through frappe.log_error. Those can echo the Aadhaar, mobile or ABHA value a kiosk sent, and a
+Healthcare Administrator can read them. The request arguments themselves are not stored (elevated() empties the
+form_dict). Scrubbing those M1 log calls is a follow-up outside this change.
 """
 
 import re

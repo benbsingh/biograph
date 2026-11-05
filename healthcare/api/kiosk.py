@@ -7,6 +7,7 @@ Kiosk role is create-only and the Patient's own hooks touch doctypes it cannot r
 """
 
 import contextlib
+import hashlib
 import re
 import sys
 
@@ -17,7 +18,6 @@ from frappe import _
 from frappe.utils import add_years, getdate, nowdate, validate_email_address
 
 from healthcare.api import kiosk_common as common
-from healthcare.kiosk_setup import log_deferred
 
 _MOBILE_RE = re.compile(r"^[6-9]\d{9}$")
 _BAD_NAME_CHARS = re.compile(r"[<>{}\x00-\x1f]")
@@ -79,7 +79,8 @@ def register_patient(
 
 	data = _validate_demographics(first_name, last_name, sex, dob, mobile, email)
 
-	lock_name = frappe.cache.make_key(f"kiosk:register:{data['dob']}:{data['mobile']}")
+	# Hashed: a Redis key name is visible to MONITOR and KEYS, and must not carry the patient's DOB and mobile
+	lock_name = frappe.cache.make_key(f"kiosk:register:{_digest(data['dob'], data['mobile'])}")
 	with _locked_and_committed(lock_name):
 		existing = _find_existing_patient(data["dob"], data["mobile"])
 		if existing:
@@ -89,12 +90,9 @@ def register_patient(
 			patient = _create_patient(data, settings, camp)
 			already_registered = False
 
+		# A token race that is really lost ends in _issue_token's generic refusal: the rollback takes this
+		# request's new patient with it, so there is nothing to bind and no other patient is ever adopted.
 		token = _issue_token(patient, camp)
-		if token.patient != patient.name:
-			# Lost a token race: the rollback took this request's new patient with it, and the winner's patient
-			# is the one the token belongs to. Greet and bind that one, as a returning patient.
-			patient = frappe.get_doc("Patient", token.patient)
-			already_registered = True
 		# Inside the lock: a double-tap's second request cannot overwrite the sticky "created" flag afterwards
 		common.bind_patient(patient.name, created=not already_registered)
 
@@ -112,6 +110,10 @@ def register_patient(
 	else:
 		result.update({"uhid": patient.name, "patient_name": patient.patient_name})
 	return result
+
+
+def _digest(*parts):
+	return hashlib.sha256(":".join(str(p) for p in parts).encode()).hexdigest()
 
 
 @contextlib.contextmanager
@@ -146,7 +148,7 @@ def _release(lock, *exc_info):
 	try:
 		lock.__exit__(*exc_info)
 	except LockError as e:
-		log_deferred("Kiosk lock lost", type(e).__name__)
+		common.log_deferred("Kiosk lock lost", type(e).__name__)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -196,7 +198,7 @@ def book_appointment(token=None):
 		frappe.throw(_("Appointment booking is not available."), frappe.ValidationError)
 
 	today = nowdate()
-	lock_name = frappe.cache.make_key(f"kiosk:book:{patient}:{today}")
+	lock_name = frappe.cache.make_key(f"kiosk:book:{_digest(patient, today)}")
 	with _locked_and_committed(lock_name):
 		appointment = _todays_camp_appointment(patient, camp, today) or _create_camp_appointment(patient, camp, today)
 

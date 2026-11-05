@@ -640,18 +640,39 @@ class TestKioskRegister(KioskTestCase):
 		self.assertNotIn("unique", str(ctx.exception))
 		self.assertNotIn("KT-", str(ctx.exception))
 
-	def test_a_lost_token_race_binds_and_greets_the_winners_patient(self):
-		winner = kiosk.register_patient(**patient_args(mobile="9123456780", first_name="Winner"))
-		winner_token = frappe.get_doc("Kiosk Token", winner["token"])
-		with patch.object(kiosk, "_issue_token", return_value=winner_token), patch.object(
-			kiosk_common, "bind_patient"
-		) as bind:
-			result = kiosk.register_patient(**patient_args(mobile="9123456781", first_name="Loser"))
-		bind.assert_called_once_with(winner["uhid"], created=False)
-		self.assertTrue(result["already_registered"])
-		self.assertEqual(result["first_name"], "Winner")
-		self.assertNotIn("uhid", result)
-		self.assertEqual(result["token"], winner["token"])
+	def test_a_lost_token_race_ends_in_the_generic_refusal_and_binds_nothing(self):
+		# The loser's rollback takes its new patient with it, so no winner is found for it: refuse, bind nobody.
+		def lose_the_race(doc, *args, **kwargs):
+			if doc.doctype == "Kiosk Token":
+				raise frappe.UniqueValidationError("Kiosk Token KT-20990101-0001 must be unique")
+			return real_insert(doc, *args, **kwargs)
+
+		real_insert = frappe.model.document.Document.insert
+		with patch.object(frappe.model.document.Document, "insert", lose_the_race), patch.object(
+			frappe.db, "rollback"
+		), patch.object(kiosk_common, "bind_patient") as bind:
+			with self.assertRaises(frappe.ValidationError) as ctx:
+				kiosk.register_patient(**patient_args(mobile="9123456781"))
+		self.assertIn("ask for help", str(ctx.exception))
+		bind.assert_not_called()
+
+	def test_a_logging_failure_falls_back_to_the_file_logger_with_the_class_only(self):
+		saved = frappe.local.form_dict
+		frappe.local.form_dict = frappe._dict(mobile="9876543210")
+		logger = types.SimpleNamespace(error=lambda *a, **k: calls.append(a))
+		calls = []
+		try:
+			with patch.object(frappe, "log_error", side_effect=RuntimeError("Asha 9876543210")), patch.object(
+				frappe, "logger", return_value=logger
+			):
+				kiosk_common.log_deferred("Kiosk lock lost", "LockError")  # must not raise
+			self.assertEqual(frappe.local.form_dict.get("mobile"), "9876543210")  # restored
+		finally:
+			frappe.local.form_dict = saved
+		self.assertEqual(len(calls), 1)
+		self.assertNotIn("9876543210", str(calls))
+		self.assertNotIn("Asha", str(calls))
+		self.assertIn("RuntimeError", str(calls))
 
 	def test_a_token_insert_failure_is_answered_generically(self):
 		real_insert = frappe.model.document.Document.insert
@@ -920,6 +941,26 @@ class TestKioskBooking(KioskTestCase):
 			self.assertRaises(frappe.PermissionError, kiosk.book_appointment, registered["token"])
 		for bad in ("NO-SUCH-PATIENT", "", None, ["x"]):
 			self.assertRaises(frappe.PermissionError, kiosk.book_appointment, bad)
+
+	def test_the_lock_names_do_not_carry_the_patients_dob_or_mobile(self):
+		names = []
+		real_lock = frappe.cache.lock
+
+		def spy(name, *args, **kwargs):
+			names.append(name)
+			return real_lock(name, *args, **kwargs)
+
+		with patch.object(frappe.cache, "lock", side_effect=spy):
+			self.camp = make_camp()
+			self.configure(patient_source="Medical Camp", medical_camp=self.camp.name, enable_appointment=1)
+			registered = kiosk.register_patient(**patient_args(mobile="9123456789", dob="1991-04-05"))
+			kiosk.book_appointment(registered["token"])
+		self.assertEqual(len(names), 2)
+		for name in names:
+			text = name.decode() if isinstance(name, bytes) else str(name)
+			self.assertNotIn("9123456789", text)
+			self.assertNotIn("1991-04-05", text)
+			self.assertNotIn(registered["uhid"], text)
 
 	def test_matched_patient_can_book(self):
 		args = patient_args()
