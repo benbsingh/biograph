@@ -1,0 +1,42 @@
+"""Kiosk role and its create-only permissions.
+
+Called from after_migrate, setup_healthcare and the setup_kiosk_role patch; every call is safe to repeat.
+"""
+
+import frappe
+from frappe.permissions import add_permission, setup_custom_perms, update_permission_property
+
+KIOSK_ROLE = "Kiosk"
+KIOSK_DOCTYPES = ("Patient", "Patient Appointment")
+
+_PERM_TYPES = (
+	"read", "write", "delete", "submit", "cancel", "amend", "report", "export", "import", "share", "print", "email", "select",
+)  # fmt: skip
+
+
+def ensure_kiosk_role_and_permissions():
+	_ensure_role()
+	for doctype in KIOSK_DOCTYPES:
+		_ensure_create_only(doctype)
+
+
+def _ensure_role():
+	if frappe.db.exists("Role", KIOSK_ROLE):
+		return
+	frappe.get_doc({"doctype": "Role", "role_name": KIOSK_ROLE, "desk_access": 0}).insert(ignore_permissions=True)
+
+
+def _ensure_create_only(doctype):
+	# Never insert a bare Custom DocPerm: once one exists Frappe ignores all the standard DocPerm rows
+	# for the doctype. setup_custom_perms copies the standard rows across first, so other roles keep access.
+	setup_custom_perms(doctype)
+	filters = {"parent": doctype, "role": KIOSK_ROLE, "permlevel": 0, "if_owner": 0}
+	if not frappe.db.exists("Custom DocPerm", filters):
+		add_permission(doctype, KIOSK_ROLE, 0, "create")
+
+	row = frappe.db.get_value("Custom DocPerm", filters, ["create", *_PERM_TYPES], as_dict=True)
+	for ptype in _PERM_TYPES:
+		if row.get(ptype):
+			update_permission_property(doctype, KIOSK_ROLE, 0, ptype, 0, validate=False)
+	if not row.create:
+		update_permission_property(doctype, KIOSK_ROLE, 0, "create", 1, validate=False)

@@ -30,3 +30,4 @@ healthcare.patches.v16_0.abdm_consolidate_settings
 healthcare.patches.v16_0.abdm_add_fhir_id_to_patient
 healthcare.patches.v16_0.abdm_create_abha_address_detail
 healthcare.patches.v16_0.abdm_create_fhir_foundation_doctypes
+healthcare.patches.v16_0.setup_kiosk_role
