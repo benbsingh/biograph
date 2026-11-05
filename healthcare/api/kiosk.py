@@ -24,8 +24,11 @@ _LOCK_TIMEOUT = 10
 @frappe.whitelist()
 @common.kiosk_endpoint
 def get_config():
+	return config_for(common.get_settings())
+
+
+def config_for(settings):
 	"""What the page needs to start: features, idle timeout and the camp's name (never its details)."""
-	settings = common.get_settings()
 	camp_name, camp_active = None, True
 	if settings.patient_source == "Medical Camp":
 		camp_name = frappe.db.get_value("Medical Camp", settings.medical_camp, "camp_name")

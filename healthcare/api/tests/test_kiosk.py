@@ -9,7 +9,10 @@ import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, nowdate
 
+import json
+
 from healthcare.api import kiosk, kiosk_abha, kiosk_common
+from healthcare.www import kiosk as kiosk_page
 from healthcare.regional.india.abdm.api import enrol, profile
 from healthcare.regional.india.abdm.utils.abha_client import AbhaClient
 from healthcare.kiosk_setup import KIOSK_DOCTYPES, KIOSK_ROLE, ensure_kiosk_role_and_permissions
@@ -812,3 +815,61 @@ class TestKioskAbha(KioskTestCase):
 			"send_link_otp": lambda: kiosk_abha.send_link_otp(uhid, "asha.v@sbx"),
 			"verify_link_otp": lambda: kiosk_abha.verify_link_otp(uhid, txn, "123456"),
 		}
+
+
+class TestKioskPage(KioskTestCase):
+	def context(self):
+		return kiosk_page.get_context(frappe._dict())
+
+	def boot(self, context):
+		return json.loads(context.boot_json.replace("\\u003c", "<").replace("\\u003e", ">").replace("\\u0026", "&"))
+
+	def test_guest_is_sent_to_login_and_back(self):
+		frappe.set_user("Guest")
+		with self.assertRaises(frappe.Redirect):
+			self.context()
+		self.assertEqual(frappe.local.flags.redirect_location, "/login?redirect-to=%2Fkiosk")
+
+	def test_other_roles_are_refused(self):
+		frappe.set_user(STAFF_USER)
+		self.assertRaises(frappe.PermissionError, self.context)
+
+	def test_kiosk_user_gets_what_the_page_needs_and_no_patient_data(self):
+		self.configure(idle_timeout=45, enable_abha=1)
+		kiosk.register_patient(**patient_args())  # a patient exists; none of it may reach the HTML
+		context = self.context()
+
+		self.assertEqual(context.no_cache, 1)
+		self.assertIn("/assets/healthcare/kiosk/kiosk.js", context.js_url)
+		self.assertIn("/assets/healthcare/kiosk/kiosk.css", context.css_url)
+		boot = self.boot(context)
+		self.assertEqual(
+			set(boot),
+			{"csrf_token", "enabled", "preview", "idle_timeout", "enable_abha", "enable_appointment", "camp", "camp_active"},
+		)
+		self.assertEqual(boot["idle_timeout"], 45)
+		self.assertTrue(boot["enable_abha"])
+		self.assertFalse(boot["preview"])
+		self.assertTrue(boot["csrf_token"])
+
+	def test_boot_json_cannot_close_its_script_tag(self):
+		self.assertNotIn("</", kiosk_page._safe_json({"camp": "</script><script>alert(1)</script>"}))
+
+	def test_system_manager_may_preview(self):
+		make_user(STAFF_USER, ["System Manager"])
+		frappe.set_user(STAFF_USER)
+		boot = self.boot(self.context())
+		self.assertTrue(boot["preview"])
+
+	def test_page_reports_a_disabled_kiosk(self):
+		self.configure(enabled=0)
+		self.assertFalse(self.boot(self.context())["enabled"])
+
+	def test_page_reports_a_closed_camp(self):
+		camp = make_camp()
+		self.configure(patient_source="Medical Camp", medical_camp=camp.name, enable_appointment=1)
+		frappe.db.set_value("Medical Camp", camp.name, "status", "Completed")
+		boot = self.boot(self.context())
+		self.assertFalse(boot["camp_active"])
+		self.assertFalse(boot["enable_appointment"])
+		self.assertEqual(boot["camp"], camp.camp_name)
