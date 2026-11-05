@@ -478,7 +478,7 @@ class TestKioskSlip(KioskTestCase):
 		result = kiosk.register_patient(**args)
 
 		html = kiosk.get_token_slip(result["token"])["html"]
-		today = frappe.utils.format_date(nowdate())
+		today = frappe.utils.formatdate(nowdate())
 
 		for expected in (result["uhid"], result["patient_name"], str(result["token_number"]), camp.camp_name, today):
 			self.assertIn(expected, html)
