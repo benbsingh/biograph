@@ -198,8 +198,12 @@ def _validate_demographics(first_name, last_name, sex, dob, mobile, email):
 	}
 
 
+def _stripped(value):
+	return value.strip() if isinstance(value, str) else ""
+
+
 def _clean_name(value, required):
-	value = (value or "").strip() if isinstance(value, str) else ""
+	value = _stripped(value)
 	if not value:
 		if required:
 			frappe.throw(_("Please enter your name."), frappe.ValidationError)
@@ -210,7 +214,7 @@ def _clean_name(value, required):
 
 
 def _clean_sex(value):
-	value = (value or "").strip() if isinstance(value, str) else ""
+	value = _stripped(value)
 	canonical = frappe.db.get_value("Gender", value, "name") if value else None
 	if not canonical:
 		frappe.throw(_("Please select your gender."), frappe.ValidationError)
@@ -242,7 +246,7 @@ def normalise_mobile(value):
 
 
 def _clean_email(value):
-	value = (value or "").strip() if isinstance(value, str) else ""
+	value = _stripped(value)
 	if not value:
 		return None
 	if not validate_email_address(value):

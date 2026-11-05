@@ -122,9 +122,7 @@ def get_address_suggestions(patient=None):
 @frappe.whitelist()
 @common.kiosk_endpoint
 def choose_address(patient=None, abha_address=None):
-	abha_address = (abha_address or "").strip() if isinstance(abha_address, str) else ""
-	if not _ABHA_ADDRESS_RE.match(abha_address):
-		frappe.throw(_("Please choose a valid ABHA address."), frappe.ValidationError)
+	abha_address = _abha_address(abha_address, _("Please choose a valid ABHA address."))
 	result = _run("abha_choose_address", patient, lambda: enrol.set_abha_address(patient, abha_address))
 	return {"status": "saved" if result else None, "masked_abha_address": _mask_address(abha_address)}
 
@@ -137,9 +135,7 @@ def choose_address(patient=None, abha_address=None):
 @frappe.whitelist()
 @common.kiosk_endpoint
 def send_link_otp(patient=None, abha_address=None, otp_system="abdm"):
-	abha_address = (abha_address or "").strip() if isinstance(abha_address, str) else ""
-	if not _ABHA_ADDRESS_RE.match(abha_address):
-		frappe.throw(_("Please enter a valid ABHA address."), frappe.ValidationError)
+	abha_address = _abha_address(abha_address, _("Please enter a valid ABHA address."))
 	otp_system = _otp_system(otp_system)
 	result = _run(
 		"abha_send_link_otp",
@@ -212,6 +208,13 @@ def _digits(value, pattern, message):
 	if not pattern.match(cleaned):
 		frappe.throw(message, frappe.ValidationError)
 	return cleaned
+
+
+def _abha_address(value, message):
+	value = value.strip() if isinstance(value, str) else ""
+	if not _ABHA_ADDRESS_RE.match(value):
+		frappe.throw(message, frappe.ValidationError)
+	return value
 
 
 def _otp_system(value):
