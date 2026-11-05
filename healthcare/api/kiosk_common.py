@@ -1,0 +1,187 @@
+"""Shared guards for the registration kiosk API (healthcare.api.kiosk and healthcare.api.kiosk_abha).
+
+The kiosk is one shared, unattended device signed in as a user holding only the Kiosk role. Everything here
+is server-authoritative: the client may only say what a patient typed, never who they are or what to tag.
+"""
+
+import contextlib
+import functools
+
+import frappe
+from frappe import _
+from frappe.utils import getdate, nowdate
+
+from healthcare.kiosk_setup import KIOSK_ROLE
+from healthcare.regional.india.abdm.utils.http_guards import require_post
+
+# Slack on top of the idle timeout so a patient finishing at the last second keeps their session.
+SESSION_GRACE_SECONDS = 30
+RATE_LIMIT_STATUS_CODE = 429
+API_CALL_LIMIT = 10  # per endpoint, per window
+API_CALL_WINDOW = 60
+OTP_SEND_LIMIT = 3  # per patient, per window
+OTP_SEND_WINDOW = 600
+
+
+# --------------------------------------------------------------------------------------------------
+# Guards
+# --------------------------------------------------------------------------------------------------
+
+
+def require_kiosk_user():
+	"""Only a signed-in user holding the Kiosk role. Guests, staff and System Managers are refused."""
+	if frappe.session.user == "Guest" or KIOSK_ROLE not in frappe.get_roles():
+		frappe.throw(_("You do not have permission to use the kiosk."), frappe.PermissionError)
+
+
+def get_settings():
+	return frappe.get_single("Kiosk Settings")
+
+
+def get_enabled_settings():
+	settings = get_settings()
+	if not settings.enabled:
+		frappe.throw(_("Kiosk unavailable"), frappe.ValidationError)
+	return settings
+
+
+def kiosk_endpoint(fn):
+	"""Apply under @frappe.whitelist(): POST only, kiosk enabled, Kiosk role, and no internal detail in errors."""
+
+	@functools.wraps(fn)
+	def guarded(*args, **kwargs):
+		try:
+			require_kiosk_user()
+			get_enabled_settings()
+			return fn(*args, **kwargs)
+		except (frappe.ValidationError, frappe.PermissionError):
+			raise
+		except Exception as e:
+			# Class and endpoint only: a traceback would carry the request's locals, which hold patient data.
+			frappe.log_error(title="Kiosk request failed", message=f"{fn.__name__}: {type(e).__name__}")
+			frappe.throw(_("Something went wrong. Please ask for help at the desk."), frappe.ValidationError)
+
+	return require_post(guarded)
+
+
+def _hit(name: str, limit: int, window: int):
+	"""Count one hit in a fixed window; over the limit answers HTTP 429.
+
+	Atomic (Redis INCR on the real prefixed key). The ABDM limiter in rate_limit.py is not reused: it reads a
+	raw key but writes through frappe.cache.set_value, which prefixes and pickles, so it never sees its own count.
+	"""
+	key = frappe.cache.make_key(f"kiosk:rate:{name}")
+	count = frappe.cache.incr(key)
+	if count == 1:
+		frappe.cache.expire(key, window)
+	if count > limit:
+		frappe.local.response["http_status_code"] = RATE_LIMIT_STATUS_CODE
+		frappe.throw(_("Too many requests. Please wait a minute and try again."), frappe.ValidationError)
+
+
+def throttle(endpoint: str | None = None, otp_patient: str | None = None):
+	"""10 calls a minute per endpoint, and 3 OTP sends per 10 minutes per patient.
+
+	Every kiosk shares one user, so the limits are shared by all devices; a breach is HTTP 429.
+	"""
+	if endpoint:
+		_hit(f"{frappe.session.user}:{endpoint}", API_CALL_LIMIT, API_CALL_WINDOW)
+	if otp_patient:
+		_hit(f"{frappe.session.user}:otp:{otp_patient}", OTP_SEND_LIMIT, OTP_SEND_WINDOW)
+
+
+@contextlib.contextmanager
+def elevated():
+	"""Run as Administrator, then restore the caller, even on error.
+
+	The only way through AbhaClient._assert_patient_permission for a create-only Kiosk user. Call it only after
+	assert_bound() has proved the patient belongs to this kiosk session.
+	"""
+	previous = frappe.session.user
+	frappe.set_user("Administrator")
+	try:
+		yield
+	finally:
+		frappe.set_user(previous)
+
+
+# --------------------------------------------------------------------------------------------------
+# Camp
+# --------------------------------------------------------------------------------------------------
+
+
+def get_active_camp(settings):
+	"""The configured camp when it is Ongoing and today falls in its dates; None when the kiosk is not camp-bound."""
+	if settings.patient_source != "Medical Camp":
+		return None
+
+	camp = frappe.db.get_value(
+		"Medical Camp",
+		settings.medical_camp,
+		["name", "camp_name", "status", "start_date", "end_date", "appointment_type", "company"],
+		as_dict=True,
+	)
+	today = getdate(nowdate())
+	if (
+		not camp
+		or camp.status != "Ongoing"
+		or not camp.start_date
+		or not camp.end_date
+		or not (getdate(camp.start_date) <= today <= getdate(camp.end_date))
+	):
+		frappe.throw(_("This camp is not active. Please ask for help at the desk."), frappe.ValidationError)
+	return camp
+
+
+# --------------------------------------------------------------------------------------------------
+# Session binding
+# --------------------------------------------------------------------------------------------------
+# Every kiosk shares one user, so the unit of identity is the login session (sid): the patients this
+# session registered, and the OTP transactions it started. The client sends names; the server only
+# honours the ones it handed out itself.
+
+
+def _session_key():
+	return f"kiosk:session:{frappe.session.sid}"
+
+
+def _load_session():
+	return frappe.cache.get_value(_session_key(), expires=True) or {"patients": {}, "txns": {}}
+
+
+def _save_session(state):
+	ttl = (get_settings().idle_timeout or 60) + SESSION_GRACE_SECONDS
+	frappe.cache.set_value(_session_key(), state, expires_in_sec=ttl)
+
+
+def bind_patient(patient: str, created: bool):
+	state = _load_session()
+	# created is sticky: a patient this session made stays eligible for ABHA even if re-submitted
+	entry = state["patients"].get(patient, {})
+	state["patients"][patient] = {"created": bool(created or entry.get("created"))}
+	_save_session(state)
+
+
+def assert_bound(patient: str, require_created: bool = False):
+	"""Refuse a patient this kiosk session did not register (require_created) or at least match."""
+	entry = _load_session()["patients"].get(patient)
+	if not entry or (require_created and not entry["created"]):
+		frappe.throw(_("This action is not available."), frappe.PermissionError)
+
+
+def bind_txn(txn_id: str, patient: str):
+	if not txn_id:
+		return
+	state = _load_session()
+	state["txns"][txn_id] = patient
+	_save_session(state)
+
+
+def assert_txn_bound(txn_id: str, patient: str):
+	"""Refuse an OTP transaction this session did not start for this patient (stops replay of a foreign txn)."""
+	if not txn_id or _load_session()["txns"].get(txn_id) != patient:
+		frappe.throw(_("This action is not available."), frappe.PermissionError)
+
+
+def clear_session():
+	frappe.cache.delete_value(_session_key())
