@@ -19,6 +19,7 @@ from healthcare.api import kiosk_common as common
 from healthcare.kiosk_setup import KIOSK_ROLE
 
 no_cache = 1
+no_sitemap = 1
 
 _PREVIEW_ROLES = ("System Manager",)
 

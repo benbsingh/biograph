@@ -33,7 +33,7 @@ _UNAVAILABLE = "ABHA is not available."
 # --------------------------------------------------------------------------------------------------
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 @common.kiosk_endpoint
 def send_aadhaar_otp(patient=None, aadhaar=None):
 	aadhaar = _digits(aadhaar, _AADHAAR_RE, _("Please enter your 12 digit Aadhaar number."))
@@ -41,7 +41,7 @@ def send_aadhaar_otp(patient=None, aadhaar=None):
 	return {"txn_id": _bind_txn(result.get("txnId"), patient)}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 @common.kiosk_endpoint
 def verify_aadhaar_otp(patient=None, txn_id=None, otp=None, mobile=None):
 	"""Verify the Aadhaar OTP and create the ABHA. `mobile_linked` False means a mobile OTP step follows."""
@@ -58,7 +58,7 @@ def verify_aadhaar_otp(patient=None, txn_id=None, otp=None, mobile=None):
 	}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 @common.kiosk_endpoint
 def send_enrol_mobile_otp(patient=None, txn_id=None, mobile=None):
 	"""When the mobile given differs from the Aadhaar-linked one ABDM sends a second OTP to verify it."""
@@ -73,7 +73,7 @@ def send_enrol_mobile_otp(patient=None, txn_id=None, mobile=None):
 	return {"txn_id": _bind_txn(result.get("txnId"), patient) or txn_id}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 @common.kiosk_endpoint
 def verify_enrol_mobile_otp(patient=None, txn_id=None, otp=None):
 	otp = _digits(otp, _OTP_RE, _("Please enter the 6 digit OTP."))
@@ -88,7 +88,7 @@ def verify_enrol_mobile_otp(patient=None, txn_id=None, otp=None):
 # --------------------------------------------------------------------------------------------------
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 @common.kiosk_endpoint
 def send_mobile_otp_create(patient=None, mobile=None):
 	mobile = _digits(mobile, _MOBILE_RE, _("Please enter your 10 digit mobile number."))
@@ -96,7 +96,7 @@ def send_mobile_otp_create(patient=None, mobile=None):
 	return {"txn_id": _bind_txn(result.get("txnId"), patient)}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 @common.kiosk_endpoint
 def verify_mobile_otp_create(patient=None, txn_id=None, otp=None):
 	otp = _digits(otp, _OTP_RE, _("Please enter the 6 digit OTP."))
@@ -111,7 +111,7 @@ def verify_mobile_otp_create(patient=None, txn_id=None, otp=None):
 # --------------------------------------------------------------------------------------------------
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 @common.kiosk_endpoint
 def get_address_suggestions(patient=None):
 	result = _run("abha_address_suggestions", patient, lambda: enrol.get_abha_suggestions(patient))
@@ -119,7 +119,7 @@ def get_address_suggestions(patient=None):
 	return {"suggestions": [s for s in suggestions if isinstance(s, str) and _ABHA_ADDRESS_RE.match(s)]}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 @common.kiosk_endpoint
 def choose_address(patient=None, abha_address=None):
 	abha_address = _abha_address(abha_address, _("Please choose a valid ABHA address."))
@@ -132,7 +132,7 @@ def choose_address(patient=None, abha_address=None):
 # --------------------------------------------------------------------------------------------------
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 @common.kiosk_endpoint
 def send_link_otp(patient=None, abha_address=None, otp_system="abdm"):
 	abha_address = _abha_address(abha_address, _("Please enter a valid ABHA address."))
@@ -146,7 +146,7 @@ def send_link_otp(patient=None, abha_address=None, otp_system="abdm"):
 	return {"txn_id": _bind_txn(result.get("txnId"), patient)}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 @common.kiosk_endpoint
 def verify_link_otp(patient=None, txn_id=None, otp=None, otp_system="abdm"):
 	"""Verify the OTP and link the ABHA. M1 returns the whole profile; only masked identifiers go back."""
@@ -187,9 +187,10 @@ def _run(endpoint, patient, call, txn_id=None, otp_send=False):
 	try:
 		with common.elevated():
 			return call() or {}
-	except frappe.ValidationError as e:
-		# M1's text can name another patient's UHID or an ABHA number; log it for staff, tell the patient little
-		frappe.log_error(title="Kiosk ABHA step refused", message=f"{endpoint}: {str(e)[:200]}")
+	except (frappe.ValidationError, frappe.PermissionError) as e:
+		# M1's text can name another patient's UHID or an ABHA number, so neither the screen nor the log gets
+		# it: the endpoint and the exception class tell staff which step was refused.
+		frappe.log_error(title="Kiosk ABHA step refused", message=f"{endpoint}: {type(e).__name__}")
 		frappe.throw(
 			_("We could not complete this step. Please check what you entered, or ask for help at the desk."),
 			frappe.ValidationError,

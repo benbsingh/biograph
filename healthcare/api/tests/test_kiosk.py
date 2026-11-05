@@ -93,9 +93,31 @@ class KioskTestCase(IntegrationTestCase):
 		self.configure()
 		frappe.set_user(KIOSK_USER)
 		frappe.local.response.pop("http_status_code", None)
+		# The endpoints commit inside their locks; keep the test data rolled back, and let tests see the calls
+		patcher = patch.object(frappe.db, "commit")
+		self.commit = patcher.start()
+		self.addCleanup(patcher.stop)
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
+
+	@contextlib.contextmanager
+	def watch_locks(self):
+		"""Record lock enter/exit and commits in order."""
+		events = []
+		real_lock = frappe.cache.lock
+
+		@contextlib.contextmanager
+		def spy(name, *args, **kwargs):
+			with real_lock(name, *args, **kwargs):
+				events.append("lock")
+				yield
+				events.append("unlock")
+
+		self.commit.side_effect = lambda *a, **k: events.append("commit")
+		with patch.object(frappe.cache, "lock", side_effect=spy):
+			yield events
+		self.commit.side_effect = None
 
 	@as_admin()
 	def use_leaf_customer_defaults(self):
@@ -359,6 +381,13 @@ def patient_count():
 
 
 RESULT_KEYS = {"uhid", "patient_name", "already_registered", "masked_mobile", "token_number", "token", "camp"}
+# A returning patient is greeted by first name only: no UHID and no full name reach the screen
+MATCHED_KEYS = {"first_name", "already_registered", "masked_mobile", "token_number", "token", "camp"}
+
+
+def uhid_of(result):
+	"""The patient behind a result. A matched result carries no UHID, so ask the token."""
+	return frappe.db.get_value("Kiosk Token", result["token"], "patient")
 
 
 class TestKioskRegister(KioskTestCase):
@@ -414,18 +443,21 @@ class TestKioskRegister(KioskTestCase):
 		again = kiosk.register_patient(**{**args, "mobile": "+91" + args["mobile"], "first_name": "Aasha"})
 
 		self.assertTrue(again["already_registered"])
-		self.assertEqual(again["uhid"], first["uhid"])
+		self.assertEqual(uhid_of(again), first["uhid"])
 		self.assertEqual(patient_count(), count)
-		self.assertEqual(set(again), RESULT_KEYS)
+		self.assertEqual(set(again), MATCHED_KEYS)
 		self.assertEqual(again["masked_mobile"], first["masked_mobile"])
-		self.assertEqual(again["patient_name"], first["patient_name"])  # the stored name, not the new input
+		# the stored first name, not the new input, and neither the UHID nor the full name
+		self.assertEqual(again["first_name"], frappe.db.get_value("Patient", first["uhid"], "first_name"))
+		self.assertNotIn(first["uhid"], json.dumps(again))
+		self.assertNotIn(first["patient_name"], json.dumps(again))
 
 	def test_dedupe_ignores_the_duplicate_check_setting(self):
 		args = patient_args()
 		with as_admin():
 			frappe.db.set_single_value("Healthcare Settings", "enable_patient_duplicate_check", 0)
 		first = kiosk.register_patient(**args)
-		self.assertEqual(kiosk.register_patient(**args)["uhid"], first["uhid"])
+		self.assertEqual(uhid_of(kiosk.register_patient(**args)), first["uhid"])
 
 	def test_same_mobile_different_dob_is_a_new_patient(self):
 		args = patient_args()
@@ -484,7 +516,7 @@ class TestKioskRegister(KioskTestCase):
 		kiosk_common.assert_bound(result["uhid"], require_created=True)
 		again = kiosk.register_patient(**patient_args())
 		with session_id("another-device"):
-			self.assertRaises(frappe.PermissionError, kiosk_common.assert_bound, again["uhid"])
+			self.assertRaises(frappe.PermissionError, kiosk_common.assert_bound, uhid_of(again))
 
 	def test_matched_patient_is_not_marked_created(self):
 		args = patient_args()
@@ -492,8 +524,8 @@ class TestKioskRegister(KioskTestCase):
 			kiosk.register_patient(**args)
 		with session_id("device-2"):
 			matched = kiosk.register_patient(**args)
-			kiosk_common.assert_bound(matched["uhid"])
-			self.assertRaises(frappe.PermissionError, kiosk_common.assert_bound, matched["uhid"], True)
+			kiosk_common.assert_bound(uhid_of(matched))
+			self.assertRaises(frappe.PermissionError, kiosk_common.assert_bound, uhid_of(matched), True)
 
 	def test_kiosk_user_cannot_read_patients(self):
 		result = kiosk.register_patient(**patient_args())
@@ -512,6 +544,69 @@ class TestKioskRegister(KioskTestCase):
 		before = patient_count()
 		self.assertRaises(frappe.ValidationError, kiosk.register_patient, **patient_args())
 		self.assertEqual(patient_count(), before)
+
+	def test_register_commits_inside_its_lock(self):
+		# The next holder of the lock must see this holder's rows: commit before unlock, and one on entry
+		# to end the old snapshot so a row committed a moment ago is not hidden by REPEATABLE READ.
+		with self.watch_locks() as events:
+			kiosk.register_patient(**patient_args())
+		self.assertEqual(events, ["lock", "commit", "commit", "unlock"])
+
+	def test_one_token_per_patient_per_day_is_enforced_by_the_database(self):
+		result = kiosk.register_patient(**patient_args())
+		duplicate = frappe.get_doc(
+			{"doctype": "Kiosk Token", "patient": result["uhid"], "patient_name": "x", "token_date": nowdate()}
+		)
+		with as_admin():
+			self.assertRaises(frappe.UniqueValidationError, duplicate.insert, ignore_permissions=True)
+		frappe.db.rollback()
+
+	def test_a_lost_race_for_the_token_returns_the_winners_token(self):
+		first = kiosk.register_patient(**patient_args())
+		patient = frappe.get_doc("Patient", first["uhid"])
+		# the existence check (the first read) misses it, as if the other request had not committed yet
+		real_get_value = frappe.db.get_value
+		calls = []
+
+		def stale_then_real(doctype, *args, **kwargs):
+			if doctype == "Kiosk Token" and not calls:
+				calls.append(1)
+				return None
+			return real_get_value(doctype, *args, **kwargs)
+
+		# In production the winner has committed, so the loser's rollback only drops its own pending work;
+		# here nothing is committed, so keep the rollback from wiping the winner too.
+		with patch.object(frappe.db, "get_value", side_effect=stale_then_real), patch.object(frappe.db, "rollback"):
+			token = kiosk._issue_token(patient, None)
+		self.assertEqual(token.name, first["token"])
+		self.assertEqual(frappe.db.count("Kiosk Token", {"patient": first["uhid"], "token_date": nowdate()}), 1)
+
+	def test_a_returning_patient_is_greeted_by_first_name_only(self):
+		args = patient_args()
+		with session_id("device-1"):
+			first = kiosk.register_patient(**args)
+		with session_id("device-2"):
+			again = kiosk.register_patient(**args)
+			self.assertNotIn("uhid", again)
+			self.assertNotIn("patient_name", again)
+			# the slip, fetched with the token, is where the UHID and full name appear
+			html = kiosk.get_token_slip(again["token"])["html"]
+			self.assertIn(first["uhid"], html)
+			self.assertIn(first["patient_name"], html)
+
+	def test_endpoints_accept_post_only(self):
+		for fn in (kiosk.register_patient, kiosk.get_token_slip, kiosk.book_appointment, kiosk.get_config, kiosk.end_session):
+			self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[fn], ["POST"], fn.__name__)
+		for fn in (kiosk_abha.send_aadhaar_otp, kiosk_abha.verify_link_otp, kiosk_abha.choose_address):
+			self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[fn], ["POST"], fn.__name__)
+
+	def test_refusals_are_logged_without_patient_data(self):
+		with patch.object(frappe, "log_error") as log:
+			with patch.object(frappe.model.document.Document, "insert", side_effect=frappe.ValidationError("Asha Verma 9876543210")):
+				self.assertRaises(frappe.ValidationError, kiosk.register_patient, **patient_args())
+		logged = " ".join(str(c) for c in log.call_args_list)
+		self.assertNotIn("Asha", logged)
+		self.assertNotIn("9876543210", logged)
 
 	def test_rate_limited(self):
 		for i in range(10):
@@ -582,7 +677,7 @@ class TestKioskBooking(KioskTestCase):
 
 	def test_booking_returns_only_the_allow_listed_keys(self):
 		registered = self.at_camp()
-		result = kiosk.book_appointment(registered["uhid"])
+		result = kiosk.book_appointment(registered["token"])
 
 		self.assertEqual(set(result), {"appointment", "date", "time", "token_number"})
 		self.assertEqual(result["date"], nowdate())
@@ -600,26 +695,26 @@ class TestKioskBooking(KioskTestCase):
 
 	def test_booking_twice_returns_the_same_appointment(self):
 		registered = self.at_camp()
-		first = kiosk.book_appointment(registered["uhid"])
+		first = kiosk.book_appointment(registered["token"])
 		count = frappe.db.count("Patient Appointment", {"patient": registered["uhid"]})
-		self.assertEqual(kiosk.book_appointment(registered["uhid"])["appointment"], first["appointment"])
+		self.assertEqual(kiosk.book_appointment(registered["token"])["appointment"], first["appointment"])
 		self.assertEqual(frappe.db.count("Patient Appointment", {"patient": registered["uhid"]}), count)
 
 	def test_registration_works_with_booking_off(self):
 		self.configure()
 		registered = kiosk.register_patient(**patient_args())
 		self.assertTrue(registered["uhid"])
-		self.assertRaises(frappe.ValidationError, kiosk.book_appointment, registered["uhid"])
+		self.assertRaises(frappe.ValidationError, kiosk.book_appointment, registered["token"])
 
 	def test_booking_needs_a_camp_kiosk(self):
 		self.configure(enable_appointment=1)  # Walk-in source: Kiosk Settings switches it back off
 		registered = kiosk.register_patient(**patient_args())
-		self.assertRaises(frappe.ValidationError, kiosk.book_appointment, registered["uhid"])
+		self.assertRaises(frappe.ValidationError, kiosk.book_appointment, registered["token"])
 
 	def test_unbound_patient_is_refused(self):
 		registered = self.at_camp()
 		with session_id("device-2"):
-			self.assertRaises(frappe.PermissionError, kiosk.book_appointment, registered["uhid"])
+			self.assertRaises(frappe.PermissionError, kiosk.book_appointment, registered["token"])
 		for bad in ("NO-SUCH-PATIENT", "", None, ["x"]):
 			self.assertRaises(frappe.PermissionError, kiosk.book_appointment, bad)
 
@@ -630,25 +725,31 @@ class TestKioskBooking(KioskTestCase):
 			kiosk.register_patient(**args)
 		with session_id("device-2"):
 			matched = kiosk.register_patient(**args)
-			self.assertTrue(kiosk.book_appointment(matched["uhid"])["appointment"])
+			self.assertTrue(kiosk.book_appointment(matched["token"])["appointment"])
 
 	def test_closed_camp_refuses_booking(self):
 		registered = self.at_camp()
 		for change in ({"status": "Completed"}, {"status": "Cancelled"}, {"end_date": add_days(nowdate(), -1), "start_date": add_days(nowdate(), -2)}):
 			frappe.db.set_value("Medical Camp", self.camp.name, {"status": "Ongoing", "start_date": nowdate(), "end_date": add_days(nowdate(), 1), **change})
-			self.assertRaises(frappe.ValidationError, kiosk.book_appointment, registered["uhid"])
+			self.assertRaises(frappe.ValidationError, kiosk.book_appointment, registered["token"])
 		self.assertEqual(frappe.db.count("Patient Appointment", {"patient": registered["uhid"]}), 0)
 
 	def test_camp_without_appointment_type_is_unavailable(self):
 		registered = self.at_camp()
 		frappe.db.set_value("Medical Camp", self.camp.name, "appointment_type", None)
-		self.assertRaises(frappe.ValidationError, kiosk.book_appointment, registered["uhid"])
+		self.assertRaises(frappe.ValidationError, kiosk.book_appointment, registered["token"])
+
+	def test_booking_commits_inside_its_lock(self):
+		registered = self.at_camp()
+		with self.watch_locks() as events:
+			kiosk.book_appointment(registered["token"])
+		self.assertEqual(events, ["lock", "commit", "commit", "unlock"])
 
 	def test_booking_denied_to_other_users(self):
 		registered = self.at_camp()
 		for user in ("Guest", STAFF_USER):
 			frappe.set_user(user)
-			self.assertRaises(frappe.PermissionError, kiosk.book_appointment, registered["uhid"])
+			self.assertRaises(frappe.PermissionError, kiosk.book_appointment, registered["token"])
 
 
 AADHAAR = "234567890124"  # shape only; the M1 call is mocked
@@ -712,6 +813,17 @@ class TestKioskAbha(KioskTestCase):
 				kiosk_abha.send_aadhaar_otp(self.uhid, AADHAAR)
 		self.assertNotIn("HLC-PAT-9999", str(ctx.exception))
 
+	def test_m1_permission_errors_are_not_passed_on_or_logged(self):
+		leak = "No permission for Patient HLC-PAT-9999 (ABHA 91-1234-5678-9012)"
+		with patch.object(enrol, "generate_aadhaar_otp", side_effect=frappe.PermissionError(leak)), patch.object(
+			frappe, "log_error"
+		) as log:
+			with self.assertRaises(frappe.ValidationError) as ctx:
+				kiosk_abha.send_aadhaar_otp(self.uhid, AADHAAR)
+		self.assertNotIn("HLC-PAT-9999", str(ctx.exception))
+		self.assertNotIn("HLC-PAT-9999", str(log.call_args_list))
+		self.assertNotIn("91-1234", str(log.call_args_list))
+
 	def test_every_step_refuses_a_patient_not_registered_in_this_session(self):
 		with session_id("device-2"):
 			calls = self.every_step(self.uhid, "TXN-X")
@@ -733,7 +845,7 @@ class TestKioskAbha(KioskTestCase):
 			matched = kiosk.register_patient(**args)
 			self.assertTrue(matched["already_registered"])
 			with patch.object(enrol, "generate_aadhaar_otp") as fn:
-				self.assertRaises(frappe.PermissionError, kiosk_abha.send_aadhaar_otp, matched["uhid"], AADHAAR)
+				self.assertRaises(frappe.PermissionError, kiosk_abha.send_aadhaar_otp, uhid_of(matched), AADHAAR)
 				fn.assert_not_called()
 
 	def test_a_txn_this_session_did_not_start_is_refused(self):
@@ -927,6 +1039,10 @@ class TestKioskPage(KioskTestCase):
 		frappe.set_user(STAFF_USER)
 		boot = self.boot(self.context())
 		self.assertTrue(boot["preview"])
+
+	def test_page_is_kept_out_of_the_sitemap(self):
+		self.assertEqual(kiosk_page.no_sitemap, 1)
+		self.assertEqual(kiosk_page.no_cache, 1)
 
 	def test_page_reports_a_disabled_kiosk(self):
 		self.configure(enabled=0)

@@ -274,17 +274,21 @@
 		actions.push(button("Done", reset, "secondary"));
 
 		return h("div", { class: "screen" }, [
-			h("h1", {}, p.already_registered ? "Welcome back" : "You are registered"),
+			h("h1", {}, p.already_registered ? "Welcome back, " + p.first_name : "You are registered"),
 			h("p", { class: "token-label" }, "Your token"),
 			h("p", { class: "token" }, String(p.token_number)),
-			h("dl", { class: "facts" }, [
-				h("dt", {}, "Name"),
-				h("dd", {}, p.patient_name),
-				h("dt", {}, "UHID"),
-				h("dd", {}, p.uhid),
-				h("dt", {}, "Mobile"),
-				h("dd", {}, p.masked_mobile),
-			]),
+			// A returning patient's name and UHID are not shown (mobile + DOB is weak proof of who is here);
+			// they print on the slip.
+			h("dl", { class: "facts" }, p.already_registered
+				? [h("dt", {}, "Mobile"), h("dd", {}, p.masked_mobile)]
+				: [
+					h("dt", {}, "Name"),
+					h("dd", {}, p.patient_name),
+					h("dt", {}, "UHID"),
+					h("dd", {}, p.uhid),
+					h("dt", {}, "Mobile"),
+					h("dd", {}, p.masked_mobile),
+				]),
 			S.notice ? h("p", { class: "notice" }, S.notice) : null,
 			h("div", { class: "actions stack" }, actions),
 		]);
@@ -308,7 +312,7 @@
 	}
 
 	function bookAppointment() {
-		run(call(KIOSK, "book_appointment", { patient: S.patient.uhid }), function (appointment) {
+		run(call(KIOSK, "book_appointment", { token: S.patient.token }), function (appointment) {
 			S.appointment = appointment;
 			go("booked");
 		});

@@ -6,6 +6,7 @@ Settings. Patients are created with ignore_permissions after an explicit create-
 Kiosk role is create-only and the Patient's own hooks touch doctypes it cannot reach.
 """
 
+import contextlib
 import re
 
 import frappe
@@ -21,7 +22,7 @@ _MAX_AGE_YEARS = 130
 _LOCK_TIMEOUT = 10
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 @common.kiosk_endpoint
 def get_config():
 	return config_for(common.get_settings())
@@ -46,7 +47,7 @@ def config_for(settings):
 	}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 @common.kiosk_endpoint
 def end_session():
 	"""Forget what this kiosk session registered. The page calls it on timeout or when a patient is done."""
@@ -54,7 +55,7 @@ def end_session():
 	return {}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 @common.kiosk_endpoint
 def register_patient(
 	first_name=None,
@@ -75,7 +76,7 @@ def register_patient(
 	data = _validate_demographics(first_name, last_name, sex, dob, mobile, email)
 
 	lock_name = frappe.cache.make_key(f"kiosk:register:{data['dob']}:{data['mobile']}")
-	with frappe.cache.lock(lock_name, timeout=_LOCK_TIMEOUT, blocking_timeout=_LOCK_TIMEOUT):
+	with _locked_and_committed(lock_name):
 		existing = _find_existing_patient(data["dob"], data["mobile"])
 		if existing:
 			patient = existing
@@ -88,18 +89,37 @@ def register_patient(
 
 	common.bind_patient(patient.name, created=not already_registered)
 
-	return {
-		"uhid": patient.name,
-		"patient_name": patient.patient_name,
+	result = {
 		"already_registered": already_registered,
 		"masked_mobile": _mask_mobile(data["mobile"]),
 		"token_number": token.token_number,
 		"token": token.name,
 		"camp": camp.camp_name if camp else None,
 	}
+	if already_registered:
+		# Mobile + DOB is weak proof of identity, so a returning patient is greeted by first name only. Their
+		# UHID and full name reach the screen never; they are on the printed slip, which the session may fetch.
+		result["first_name"] = patient.first_name
+	else:
+		result.update({"uhid": patient.name, "patient_name": patient.patient_name})
+	return result
 
 
-@frappe.whitelist()
+@contextlib.contextmanager
+def _locked_and_committed(lock_name):
+	"""Serialise a check-then-insert across requests.
+
+	The Redis lock only helps if the next holder can see this holder's rows, so the work is committed before
+	the lock is released, and a first commit on entry ends this request's old DB snapshot (MariaDB's
+	REPEATABLE READ would otherwise hide a row the previous holder committed a moment ago).
+	"""
+	with frappe.cache.lock(lock_name, timeout=_LOCK_TIMEOUT, blocking_timeout=_LOCK_TIMEOUT):
+		frappe.db.commit()  # nothing is pending here; this only ends the old snapshot
+		yield
+		frappe.db.commit()
+
+
+@frappe.whitelist(methods=["POST"])
 @common.kiosk_endpoint
 def get_token_slip(token=None):
 	"""The printable slip, only for a token whose patient this kiosk session registered or matched.
@@ -108,7 +128,8 @@ def get_token_slip(token=None):
 	so rendering it needs no read access to the Patient.
 	"""
 	common.throttle("get_token_slip")
-	patient = frappe.db.get_value("Kiosk Token", token, "patient") if isinstance(token, str) and token else None
+	token_row = _token_row(token)
+	patient = token_row.patient if token_row else None
 	if not patient:
 		frappe.throw(_("This action is not available."), frappe.PermissionError)  # same answer as a foreign token
 	common.assert_bound(patient)
@@ -118,16 +139,19 @@ def get_token_slip(token=None):
 	return {"html": html}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 @common.kiosk_endpoint
-def book_appointment(patient=None):
-	"""Book today's camp appointment for a patient this session registered or matched.
+def book_appointment(token=None):
+	"""Book today's camp appointment for the patient behind a token this session was issued.
 
 	Only available at a camp kiosk with appointments enabled: the camp supplies the appointment type, so no
-	practitioner or slot is chosen. Booking again the same day returns the appointment already made.
+	practitioner or slot is chosen. Booking again the same day returns the appointment already made. The
+	token, not the UHID, names the patient: a returning patient's UHID is never sent to the screen.
 	"""
 	common.throttle("book_appointment")
-	if not isinstance(patient, str) or not patient:
+	token_row = _token_row(token)
+	patient = token_row.patient if token_row else None
+	if not patient:
 		frappe.throw(_("This action is not available."), frappe.PermissionError)
 	common.assert_bound(patient)
 
@@ -139,7 +163,26 @@ def book_appointment(patient=None):
 		frappe.throw(_("Appointment booking is not available."), frappe.ValidationError)
 
 	today = nowdate()
-	appointment = frappe.db.get_value(
+	lock_name = frappe.cache.make_key(f"kiosk:book:{patient}:{today}")
+	with _locked_and_committed(lock_name):
+		appointment = _todays_camp_appointment(patient, camp, today) or _create_camp_appointment(patient, camp, today)
+
+	return {
+		"appointment": appointment.name,
+		"date": str(appointment.appointment_date),
+		"time": str(appointment.appointment_time) if appointment.appointment_time else None,
+		"token_number": token_row.token_number,
+	}
+
+
+def _token_row(token):
+	if not isinstance(token, str) or not token:
+		return None
+	return frappe.db.get_value("Kiosk Token", token, ["patient", "token_number"], as_dict=True)
+
+
+def _todays_camp_appointment(patient, camp, today):
+	return frappe.db.get_value(
 		"Patient Appointment",
 		{
 			"patient": patient,
@@ -150,15 +193,6 @@ def book_appointment(patient=None):
 		["name", "appointment_date", "appointment_time"],
 		as_dict=True,
 	)
-	if not appointment:
-		appointment = _create_camp_appointment(patient, camp, today)
-
-	return {
-		"appointment": appointment.name,
-		"date": str(appointment.appointment_date),
-		"time": str(appointment.appointment_time) if appointment.appointment_time else None,
-		"token_number": frappe.db.get_value("Kiosk Token", {"patient": patient, "token_date": today}, "token_number"),
-	}
 
 
 def _create_camp_appointment(patient, camp, date):
@@ -177,7 +211,7 @@ def _create_camp_appointment(patient, camp, date):
 	try:
 		doc.insert(ignore_permissions=True)
 	except (frappe.ValidationError, frappe.DuplicateEntryError) as e:
-		frappe.log_error(title="Kiosk appointment refused", message=str(e)[:200])
+		frappe.log_error(title="Kiosk appointment refused", message=type(e).__name__)
 		frappe.throw(_("We could not book your appointment. Please ask for help at the desk."), frappe.ValidationError)
 	return doc
 
@@ -266,7 +300,7 @@ def _mask_mobile(mobile):
 def _find_existing_patient(dob, mobile):
 	"""Same DOB and the same last ten digits of mobile. Runs whether or not Healthcare Settings'
 	duplicate check is on, so a double-tap or a returning patient never gets a second record."""
-	for row in frappe.get_all("Patient", filters={"dob": dob}, fields=["name", "patient_name", "mobile"]):
+	for row in frappe.get_all("Patient", filters={"dob": dob}, fields=["name", "first_name", "patient_name", "mobile"]):
 		if _last_ten_digits(row.mobile) == mobile:
 			return row
 	return None
@@ -292,20 +326,24 @@ def _create_patient(data, settings, camp):
 		doc.insert(ignore_permissions=True)
 	except frappe.ValidationError as e:
 		# Healthcare Settings' own duplicate check can refuse; say nothing about the other record to the patient
-		frappe.log_error(title="Kiosk patient insert refused", message=str(e)[:200])
+		frappe.log_error(title="Kiosk patient insert refused", message=type(e).__name__)
 		frappe.throw(_("We could not register you here. Please ask for help at the desk."), frappe.ValidationError)
 	return doc
 
 
 def _issue_token(patient, camp):
-	"""Today's token for the patient: the one already issued if they register again, else the next number."""
+	"""Today's token for the patient: the one already issued if they register again, else the next number.
+
+	A unique (patient, token_date) index backs the lock: should two requests still race, the loser reads
+	the winner's token instead of issuing a second one.
+	"""
 	today = nowdate()
-	existing = frappe.db.get_value("Kiosk Token", {"patient": patient.name, "token_date": today})
+	existing = _todays_token(patient.name, today)
 	if existing:
-		return frappe.get_doc("Kiosk Token", existing)
+		return existing
 
 	company = frappe.defaults.get_defaults().company
-	return frappe.get_doc(
+	doc = frappe.get_doc(
 		{
 			"doctype": "Kiosk Token",
 			"patient": patient.name,
@@ -314,4 +352,17 @@ def _issue_token(patient, camp):
 			"medical_camp": camp.name if camp else None,
 			"facility_name": camp.camp_name if camp else company,
 		}
-	).insert(ignore_permissions=True)
+	)
+	try:
+		return doc.insert(ignore_permissions=True)
+	except (frappe.DuplicateEntryError, frappe.UniqueValidationError):
+		frappe.db.rollback()
+		winner = _todays_token(patient.name, today)
+		if not winner:
+			raise
+		return winner
+
+
+def _todays_token(patient, today):
+	name = frappe.db.get_value("Kiosk Token", {"patient": patient, "token_date": today})
+	return frappe.get_doc("Kiosk Token", name) if name else None

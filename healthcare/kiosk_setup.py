@@ -18,6 +18,13 @@ def ensure_kiosk_role_and_permissions():
 	_ensure_role()
 	for doctype in KIOSK_DOCTYPES:
 		_ensure_create_only(doctype)
+	_ensure_one_token_per_patient_per_day()
+
+
+def _ensure_one_token_per_patient_per_day():
+	"""Back the kiosk's registration lock with the database: a patient gets one token a day, however requests race."""
+	if frappe.db.table_exists("Kiosk Token"):
+		frappe.db.add_unique("Kiosk Token", ["patient", "token_date"], constraint_name="unique_kiosk_token_patient_day")
 
 
 def _ensure_role():
@@ -29,6 +36,11 @@ def _ensure_role():
 def _ensure_create_only(doctype):
 	# Never insert a bare Custom DocPerm: once one exists Frappe ignores all the standard DocPerm rows
 	# for the doctype. setup_custom_perms copies the standard rows across first, so other roles keep access.
+	#
+	# Trade-off: from here on this site's Patient and Patient Appointment permissions live in Custom DocPerm,
+	# so a permission change made later in the app's patient.json / patient_appointment.json is not applied on a
+	# migrated site (fresh installs still get it). Change those permissions in Custom DocPerm (Role Permissions
+	# Manager) or in a patch that edits it, not only in the JSON.
 	setup_custom_perms(doctype)
 	filters = {"parent": doctype, "role": KIOSK_ROLE, "permlevel": 0, "if_owner": 0}
 	if not frappe.db.exists("Custom DocPerm", filters):
