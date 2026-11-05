@@ -42,13 +42,17 @@ def _ensure_one_token_per_patient_per_day():
 			from healthcare.api.kiosk_common import log_deferred  # late: kiosk_common imports this module
 
 			log_deferred("Kiosk Token duplicates removed", f"{len(extras)} duplicate token(s)")
-		frappe.db.add_unique("Kiosk Token", ["patient", "token_date"], constraint_name="unique_kiosk_token_patient_day")
+		frappe.db.add_unique(
+			"Kiosk Token", ["patient", "token_date"], constraint_name="unique_kiosk_token_patient_day"
+		)
 
 
 def _ensure_role():
 	if frappe.db.exists("Role", KIOSK_ROLE):
 		return
-	frappe.get_doc({"doctype": "Role", "role_name": KIOSK_ROLE, "desk_access": 0}).insert(ignore_permissions=True)
+	frappe.get_doc({"doctype": "Role", "role_name": KIOSK_ROLE, "desk_access": 0}).insert(
+		ignore_permissions=True
+	)
 
 
 def _ensure_create_only(doctype):

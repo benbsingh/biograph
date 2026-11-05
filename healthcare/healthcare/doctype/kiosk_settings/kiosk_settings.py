@@ -16,7 +16,9 @@ class KioskSettings(Document):
 			self.idle_timeout = DEFAULT_IDLE_TIMEOUT
 		if not MIN_IDLE_TIMEOUT <= self.idle_timeout <= MAX_IDLE_TIMEOUT:
 			frappe.throw(
-				_("Idle Timeout must be between {0} and {1} seconds").format(MIN_IDLE_TIMEOUT, MAX_IDLE_TIMEOUT)
+				_("Idle Timeout must be between {0} and {1} seconds").format(
+					MIN_IDLE_TIMEOUT, MAX_IDLE_TIMEOUT
+				)
 			)
 
 		if self.patient_source == "Medical Camp" and not self.medical_camp:

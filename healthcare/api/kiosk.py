@@ -23,7 +23,8 @@ _MOBILE_RE = re.compile(r"^[6-9]\d{9}$")
 _BAD_NAME_CHARS = re.compile(r"[<>{}\x00-\x1f]")
 _MAX_NAME_LENGTH = 140
 _MAX_AGE_YEARS = 130
-_LOCK_TIMEOUT = 30  # a patient insert creates a Customer and runs several hooks; a lost lock lets a second request in
+# A patient insert creates a Customer and runs several hooks; a lost lock lets a second request in
+_LOCK_TIMEOUT = 30
 
 
 @frappe.whitelist(methods=["POST"])
@@ -131,7 +132,9 @@ def _locked_and_committed(lock_name):
 		lock = frappe.cache.lock(lock_name, timeout=_LOCK_TIMEOUT, blocking_timeout=_LOCK_TIMEOUT)
 		lock.__enter__()
 	except LockError as e:
-		common.refuse("Kiosk lock failed", type(e).__name__, _("The kiosk is busy. Please try again in a moment."))
+		common.refuse(
+			"Kiosk lock failed", type(e).__name__, _("The kiosk is busy. Please try again in a moment.")
+		)
 
 	try:
 		frappe.db.commit()  # nothing is pending here; this only ends the old snapshot
@@ -163,14 +166,20 @@ def get_token_slip(token=None):
 	token_row = _token_row(token)
 	patient = token_row.patient if token_row else None
 	if not patient:
-		frappe.throw(_("This action is not available."), frappe.PermissionError)  # same answer as a foreign token
+		# same answer as a foreign token
+		frappe.throw(_("This action is not available."), frappe.PermissionError)
 	common.assert_bound(patient)
 
 	try:
-		with common.elevated():  # printing checks the viewer's print permission on Kiosk Token, which Kiosk lacks
+		# printing checks the viewer's print permission on Kiosk Token, which Kiosk lacks
+		with common.elevated():
 			html = frappe.get_print("Kiosk Token", token, "Patient Token Slip")
 	except (frappe.ValidationError, frappe.PermissionError) as e:
-		common.refuse("Kiosk slip refused", type(e).__name__, _("We could not print your slip. Please ask for help at the desk."))
+		common.refuse(
+			"Kiosk slip refused",
+			type(e).__name__,
+			_("We could not print your slip. Please ask for help at the desk."),
+		)
 	return {"html": html}
 
 
@@ -200,7 +209,9 @@ def book_appointment(token=None):
 	today = nowdate()
 	lock_name = frappe.cache.make_key(f"kiosk:book:{_digest(patient, today)}")
 	with _locked_and_committed(lock_name):
-		appointment = _todays_camp_appointment(patient, camp, today) or _create_camp_appointment(patient, camp, today)
+		appointment = _todays_camp_appointment(patient, camp, today) or _create_camp_appointment(
+			patient, camp, today
+		)
 
 	return {
 		"appointment": appointment.name,
@@ -233,7 +244,11 @@ def _todays_camp_appointment(patient, camp, today):
 def _require_create(doctype, what):
 	"""The Kiosk role's create permission, checked explicitly because the insert itself ignores permissions."""
 	if not frappe.has_permission(doctype, "create"):
-		common.refuse("Kiosk permission refused", doctype, _("We could not {0}. Please ask for help at the desk.").format(what))
+		common.refuse(
+			"Kiosk permission refused",
+			doctype,
+			_("We could not {0}. Please ask for help at the desk.").format(what),
+		)
 
 
 def _create_camp_appointment(patient, camp, date):
@@ -252,7 +267,11 @@ def _create_camp_appointment(patient, camp, date):
 	try:
 		doc.insert(ignore_permissions=True)
 	except (frappe.ValidationError, frappe.DuplicateEntryError) as e:
-		common.refuse("Kiosk appointment refused", type(e).__name__, _("We could not book your appointment. Please ask for help at the desk."))
+		common.refuse(
+			"Kiosk appointment refused",
+			type(e).__name__,
+			_("We could not book your appointment. Please ask for help at the desk."),
+		)
 	return doc
 
 
@@ -340,7 +359,9 @@ def _mask_mobile(mobile):
 def _find_existing_patient(dob, mobile):
 	"""Same DOB and the same last ten digits of mobile. Runs whether or not Healthcare Settings'
 	duplicate check is on, so a double-tap or a returning patient never gets a second record."""
-	for row in frappe.get_all("Patient", filters={"dob": dob}, fields=["name", "first_name", "patient_name", "mobile"]):
+	for row in frappe.get_all(
+		"Patient", filters={"dob": dob}, fields=["name", "first_name", "patient_name", "mobile"]
+	):
 		if _last_ten_digits(row.mobile) == mobile:
 			return row
 	return None
@@ -366,7 +387,11 @@ def _create_patient(data, settings, camp):
 		doc.insert(ignore_permissions=True)
 	except frappe.ValidationError as e:
 		# Healthcare Settings' own duplicate check can refuse; say nothing about the other record to the patient
-		common.refuse("Kiosk patient insert refused", type(e).__name__, _("We could not register you here. Please ask for help at the desk."))
+		common.refuse(
+			"Kiosk patient insert refused",
+			type(e).__name__,
+			_("We could not register you here. Please ask for help at the desk."),
+		)
 	return doc
 
 
@@ -400,11 +425,17 @@ def _issue_token(patient, camp):
 		winner = _todays_token(patient.name, today)
 		if not winner:
 			common.refuse(
-				"Kiosk token refused", "unique violation, no winner", _("We could not issue your token. Please ask for help at the desk.")
+				"Kiosk token refused",
+				"unique violation, no winner",
+				_("We could not issue your token. Please ask for help at the desk."),
 			)
 		return winner
 	except frappe.ValidationError as e:
-		common.refuse("Kiosk token refused", type(e).__name__, _("We could not issue your token. Please ask for help at the desk."))
+		common.refuse(
+			"Kiosk token refused",
+			type(e).__name__,
+			_("We could not issue your token. Please ask for help at the desk."),
+		)
 
 
 def _todays_token(patient, today):

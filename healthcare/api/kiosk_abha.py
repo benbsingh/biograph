@@ -41,7 +41,9 @@ _OTP_SYSTEMS = ("abdm", "aadhaar")
 @common.kiosk_endpoint
 def send_aadhaar_otp(patient=None, aadhaar=None):
 	aadhaar = _digits(aadhaar, _AADHAAR_RE, _("Please enter your 12 digit Aadhaar number."))
-	result = _run("abha_send_aadhaar_otp", patient, lambda: enrol.generate_aadhaar_otp(patient, aadhaar), otp_send=True)
+	result = _run(
+		"abha_send_aadhaar_otp", patient, lambda: enrol.generate_aadhaar_otp(patient, aadhaar), otp_send=True
+	)
 	return {"txn_id": _bind_txn(result.get("txnId"), patient)}
 
 
@@ -52,7 +54,10 @@ def verify_aadhaar_otp(patient=None, txn_id=None, otp=None, mobile=None):
 	otp = _digits(otp, _OTP_RE, _("Please enter the 6 digit OTP."))
 	mobile = _digits(mobile, _MOBILE_RE, _("Please enter your 10 digit mobile number.")) if mobile else ""
 	result = _run(
-		"abha_verify_aadhaar_otp", patient, lambda: enrol.enrol_by_aadhaar(patient, txn_id, otp, mobile), txn_id=txn_id
+		"abha_verify_aadhaar_otp",
+		patient,
+		lambda: enrol.enrol_by_aadhaar(patient, txn_id, otp, mobile),
+		txn_id=txn_id,
 	)
 	return {
 		"status": result.get("status"),
@@ -82,7 +87,10 @@ def send_enrol_mobile_otp(patient=None, txn_id=None, mobile=None):
 def verify_enrol_mobile_otp(patient=None, txn_id=None, otp=None):
 	otp = _digits(otp, _OTP_RE, _("Please enter the 6 digit OTP."))
 	result = _run(
-		"abha_verify_mobile_otp", patient, lambda: enrol.verify_mobile_otp(patient, txn_id, otp), txn_id=txn_id
+		"abha_verify_mobile_otp",
+		patient,
+		lambda: enrol.verify_mobile_otp(patient, txn_id, otp),
+		txn_id=txn_id,
 	)
 	return {"status": "verified" if result else None, "txn_id": txn_id}
 
@@ -96,7 +104,9 @@ def verify_enrol_mobile_otp(patient=None, txn_id=None, otp=None):
 @common.kiosk_endpoint
 def send_mobile_otp_create(patient=None, mobile=None):
 	mobile = _digits(mobile, _MOBILE_RE, _("Please enter your 10 digit mobile number."))
-	result = _run("abha_send_create_otp", patient, lambda: enrol.generate_mobile_otp(patient, mobile), otp_send=True)
+	result = _run(
+		"abha_send_create_otp", patient, lambda: enrol.generate_mobile_otp(patient, mobile), otp_send=True
+	)
 	return {"txn_id": _bind_txn(result.get("txnId"), patient)}
 
 
@@ -105,7 +115,10 @@ def send_mobile_otp_create(patient=None, mobile=None):
 def verify_mobile_otp_create(patient=None, txn_id=None, otp=None):
 	otp = _digits(otp, _OTP_RE, _("Please enter the 6 digit OTP."))
 	result = _run(
-		"abha_verify_create_otp", patient, lambda: enrol.verify_mobile_otp_enrol(patient, txn_id, otp), txn_id=txn_id
+		"abha_verify_create_otp",
+		patient,
+		lambda: enrol.verify_mobile_otp_enrol(patient, txn_id, otp),
+		txn_id=txn_id,
 	)
 	return {"txn_id": _bind_txn(result.get("txnId"), patient) or txn_id}
 

@@ -64,7 +64,8 @@ def log_deferred(title, detail):
 		frappe.log_error(title=title, message=detail, defer_insert=True)
 	except Exception as e:
 		try:
-			frappe.logger("kiosk").error("%s: log failed (%s)", title, type(e).__name__)  # class only, no patient data
+			# class only, no patient data
+			frappe.logger("kiosk").error("%s: log failed (%s)", title, type(e).__name__)
 		except Exception:
 			pass
 	finally:
@@ -95,7 +96,11 @@ def kiosk_endpoint(fn):
 			raise
 		except Exception as e:
 			# Class and endpoint only: a traceback would carry the request's locals, which hold patient data.
-			refuse("Kiosk request failed", f"{fn.__name__}: {type(e).__name__}", _("Something went wrong. Please ask for help at the desk."))
+			refuse(
+				"Kiosk request failed",
+				f"{fn.__name__}: {type(e).__name__}",
+				_("Something went wrong. Please ask for help at the desk."),
+			)
 
 	return require_post(guarded)
 

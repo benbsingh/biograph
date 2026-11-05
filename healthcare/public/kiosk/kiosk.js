@@ -21,7 +21,15 @@
 	var idleTimer = null;
 
 	function fresh() {
-		return { screen: "welcome", patient: null, mobile: "", txn: null, flow: null, error: "", notice: "" };
+		return {
+			screen: "welcome",
+			patient: null,
+			mobile: "",
+			txn: null,
+			flow: null,
+			error: "",
+			notice: "",
+		};
 	}
 
 	// ----------------------------------------------------------------------------------------------
@@ -39,13 +47,19 @@
 		});
 		[].concat(children === undefined ? [] : children).forEach(function (child) {
 			if (child === null || child === undefined || child === false) return;
-			el.appendChild(typeof child === "string" ? document.createTextNode(child) : child);
+			el.appendChild(
+				typeof child === "string" ? document.createTextNode(child) : child,
+			);
 		});
 		return el;
 	}
 
 	function button(label, onclick, kind) {
-		return h("button", { type: "button", class: "btn " + (kind || "primary"), onclick: onclick }, label);
+		return h(
+			"button",
+			{ type: "button", class: "btn " + (kind || "primary"), onclick: onclick },
+			label,
+		);
 	}
 
 	function field(id, label, attrs) {
@@ -91,11 +105,14 @@
 	}
 
 	function serverMessage(body, status) {
-		if (status === 429) return "Too many requests. Please wait a minute and try again.";
-		if (status === 401) return "This kiosk is not signed in. Please ask for help at the desk.";
+		if (status === 429)
+			return "Too many requests. Please wait a minute and try again.";
+		if (status === 401)
+			return "This kiosk is not signed in. Please ask for help at the desk.";
 		// A 403 is usually this session's registration expiring (start over), but it is also what a kiosk login
 		// that has expired or lost its role gets, which starting over does not fix, so the desk is named too.
-		if (status === 403) return "Your session has ended. Please start again, or ask for help at the desk if this keeps happening.";
+		if (status === 403)
+			return "Your session has ended. Please start again, or ask for help at the desk if this keeps happening.";
 		try {
 			var messages = JSON.parse(body._server_messages || "[]");
 			if (messages.length) {
@@ -143,7 +160,8 @@
 		S = fresh();
 		busy = false;
 		render();
-		if (hadPatient && !BOOT.preview) call(KIOSK, "end_session").catch(function () {});
+		if (hadPatient && !BOOT.preview)
+			call(KIOSK, "end_session").catch(function () {});
 	}
 
 	["pointerdown", "keydown", "input", "touchstart"].forEach(function (name) {
@@ -175,12 +193,18 @@
 		};
 		var content = unavailable() || screens[S.screen]();
 		ROOT.replaceChildren(
-			BOOT.preview ? h("p", { class: "banner" }, "Preview: sign in as the Kiosk user to register patients.") : null,
+			BOOT.preview
+				? h(
+						"p",
+						{ class: "banner" },
+						"Preview: sign in as the Kiosk user to register patients.",
+					)
+				: null,
 			h("section", { class: "card" }, [
 				content,
 				S.error ? h("p", { class: "error", role: "alert" }, S.error) : null,
 				busy ? h("p", { class: "busy" }, "Please wait...") : null,
-			])
+			]),
 		);
 		var first = ROOT.querySelector("input, select");
 		if (first && !busy) first.focus({ preventScroll: true });
@@ -201,7 +225,11 @@
 		return h("div", { class: "screen" }, [
 			h("h1", {}, "Welcome"),
 			BOOT.camp ? h("p", { class: "lead" }, BOOT.camp) : null,
-			h("p", { class: "lead" }, "Touch the button to register and get your token."),
+			h(
+				"p",
+				{ class: "lead" },
+				"Touch the button to register and get your token.",
+			),
 			button("Start registration", function () {
 				go("form");
 			}),
@@ -213,8 +241,15 @@
 		var draft = S.draft || {};
 		return h("form", { class: "screen", novalidate: true, onsubmit: submitForm }, [
 			h("h1", {}, "Your details"),
-			field("first_name", "First name", { value: draft.first_name || "", required: true, maxlength: 140 }),
-			field("last_name", "Last name (optional)", { value: draft.last_name || "", maxlength: 140 }),
+			field("first_name", "First name", {
+				value: draft.first_name || "",
+				required: true,
+				maxlength: 140,
+			}),
+			field("last_name", "Last name (optional)", {
+				value: draft.last_name || "",
+				maxlength: 140,
+			}),
 			h("fieldset", { class: "field" }, [
 				h("legend", {}, "Gender"),
 				h(
@@ -222,13 +257,23 @@
 					{ class: "choices" },
 					GENDERS.map(function (name) {
 						return h("label", { class: "choice" }, [
-							h("input", { type: "radio", name: "sex", value: name, checked: gender === name, required: true }),
+							h("input", {
+								type: "radio",
+								name: "sex",
+								value: name,
+								checked: gender === name,
+								required: true,
+							}),
 							h("span", {}, name),
 						]);
-					})
+					}),
 				),
 			]),
-			field("dob", "Date of birth", { type: "date", value: draft.dob || "", required: true }),
+			field("dob", "Date of birth", {
+				type: "date",
+				value: draft.dob || "",
+				required: true,
+			}),
 			field("mobile", "Mobile number", {
 				type: "tel",
 				inputmode: "numeric",
@@ -236,12 +281,19 @@
 				required: true,
 				placeholder: "10 digit number",
 			}),
-			field("email", "Email (optional)", { type: "email", value: draft.email || "" }),
+			field("email", "Email (optional)", {
+				type: "email",
+				value: draft.email || "",
+			}),
 			h("div", { class: "actions" }, [
-				button("Back", function () {
-					S.draft = null;
-					reset();
-				}, "secondary"),
+				button(
+					"Back",
+					function () {
+						S.draft = null;
+						reset();
+					},
+					"secondary",
+				),
 				h("button", { type: "submit", class: "btn primary" }, "Register"),
 			]),
 		]);
@@ -270,28 +322,46 @@
 	function result() {
 		var p = S.patient;
 		var actions = [button("Print my token", printSlip)];
-		if (BOOT.enable_appointment) actions.push(button("Book my appointment", bookAppointment, "secondary"));
-		if (BOOT.enable_abha && !p.already_registered) actions.push(button("Create or link my ABHA", function () {
-			go("abhaMethod");
-		}, "secondary"));
+		if (BOOT.enable_appointment)
+			actions.push(button("Book my appointment", bookAppointment, "secondary"));
+		if (BOOT.enable_abha && !p.already_registered)
+			actions.push(
+				button(
+					"Create or link my ABHA",
+					function () {
+						go("abhaMethod");
+					},
+					"secondary",
+				),
+			);
 		actions.push(button("Done", reset, "secondary"));
 
 		return h("div", { class: "screen" }, [
-			h("h1", {}, p.already_registered ? "Welcome back, " + p.first_name : "You are registered"),
+			h(
+				"h1",
+				{},
+				p.already_registered
+					? "Welcome back, " + p.first_name
+					: "You are registered",
+			),
 			h("p", { class: "token-label" }, "Your token"),
 			h("p", { class: "token" }, String(p.token_number)),
 			// A returning patient's name and UHID are not shown (mobile + DOB is weak proof of who is here);
 			// they print on the slip.
-			h("dl", { class: "facts" }, p.already_registered
-				? [h("dt", {}, "Mobile"), h("dd", {}, p.masked_mobile)]
-				: [
-					h("dt", {}, "Name"),
-					h("dd", {}, p.patient_name),
-					h("dt", {}, "UHID"),
-					h("dd", {}, p.uhid),
-					h("dt", {}, "Mobile"),
-					h("dd", {}, p.masked_mobile),
-				]),
+			h(
+				"dl",
+				{ class: "facts" },
+				p.already_registered
+					? [h("dt", {}, "Mobile"), h("dd", {}, p.masked_mobile)]
+					: [
+							h("dt", {}, "Name"),
+							h("dd", {}, p.patient_name),
+							h("dt", {}, "UHID"),
+							h("dd", {}, p.uhid),
+							h("dt", {}, "Mobile"),
+							h("dd", {}, p.masked_mobile),
+						],
+			),
 			S.notice ? h("p", { class: "notice" }, S.notice) : null,
 			h("div", { class: "actions stack" }, actions),
 		]);
@@ -315,10 +385,13 @@
 	}
 
 	function bookAppointment() {
-		run(call(KIOSK, "book_appointment", { token: S.patient.token }), function (appointment) {
-			S.appointment = appointment;
-			go("booked");
-		});
+		run(
+			call(KIOSK, "book_appointment", { token: S.patient.token }),
+			function (appointment) {
+				S.appointment = appointment;
+				go("booked");
+			},
+		);
 	}
 
 	function booked() {
@@ -334,9 +407,13 @@
 				h("dd", {}, String(a.token_number)),
 			]),
 			h("div", { class: "actions" }, [
-				button("Back", function () {
-					go("result");
-				}, "secondary"),
+				button(
+					"Back",
+					function () {
+						go("result");
+					},
+					"secondary",
+				),
 				button("Done", reset),
 			]),
 		]);
@@ -355,17 +432,29 @@
 					S.flow = "aadhaar";
 					go("abhaAadhaar");
 				}),
-				button("Create ABHA with mobile number", function () {
-					S.flow = "mobile";
-					go("abhaAadhaar");
-				}, "secondary"),
-				button("I already have an ABHA", function () {
-					S.flow = "link";
-					go("abhaAadhaar");
-				}, "secondary"),
-				button("Back", function () {
-					go("result");
-				}, "secondary"),
+				button(
+					"Create ABHA with mobile number",
+					function () {
+						S.flow = "mobile";
+						go("abhaAadhaar");
+					},
+					"secondary",
+				),
+				button(
+					"I already have an ABHA",
+					function () {
+						S.flow = "link";
+						go("abhaAadhaar");
+					},
+					"secondary",
+				),
+				button(
+					"Back",
+					function () {
+						go("result");
+					},
+					"secondary",
+				),
 			]),
 		]);
 	}
@@ -373,21 +462,39 @@
 	// First input of every flow: Aadhaar number, mobile number or ABHA address
 	function abhaAadhaar() {
 		var cfg = {
-			aadhaar: ["Aadhaar number", { inputmode: "numeric", maxlength: 14, placeholder: "12 digit number" }],
-			mobile: ["Mobile number", { type: "tel", inputmode: "numeric", value: S.mobile }],
+			aadhaar: [
+				"Aadhaar number",
+				{ inputmode: "numeric", maxlength: 14, placeholder: "12 digit number" },
+			],
+			mobile: [
+				"Mobile number",
+				{ type: "tel", inputmode: "numeric", value: S.mobile },
+			],
 			link: ["ABHA address", { placeholder: "name@abdm" }],
 		}[S.flow];
-		return h("form", { class: "screen", novalidate: true, onsubmit: sendFirstOtp }, [
-			h("h1", {}, S.flow === "link" ? "Link your ABHA" : "Create your ABHA"),
-			field("abha_first", cfg[0], Object.assign({ required: true }, cfg[1])),
-			h("p", { class: "hint" }, "We will send an OTP to the mobile number linked with it."),
-			h("div", { class: "actions" }, [
-				button("Back", function () {
-					go("abhaMethod");
-				}, "secondary"),
-				h("button", { type: "submit", class: "btn primary" }, "Send OTP"),
-			]),
-		]);
+		return h(
+			"form",
+			{ class: "screen", novalidate: true, onsubmit: sendFirstOtp },
+			[
+				h("h1", {}, S.flow === "link" ? "Link your ABHA" : "Create your ABHA"),
+				field("abha_first", cfg[0], Object.assign({ required: true }, cfg[1])),
+				h(
+					"p",
+					{ class: "hint" },
+					"We will send an OTP to the mobile number linked with it.",
+				),
+				h("div", { class: "actions" }, [
+					button(
+						"Back",
+						function () {
+							go("abhaMethod");
+						},
+						"secondary",
+					),
+					h("button", { type: "submit", class: "btn primary" }, "Send OTP"),
+				]),
+			],
+		);
 	}
 
 	function sendFirstOtp(event) {
@@ -400,7 +507,10 @@
 			},
 			mobile: function () {
 				S.mobile = input;
-				return call(ABHA, "send_mobile_otp_create", { patient: p, mobile: input });
+				return call(ABHA, "send_mobile_otp_create", {
+					patient: p,
+					mobile: input,
+				});
 			},
 			link: function () {
 				return call(ABHA, "send_link_otp", { patient: p, abha_address: input });
@@ -417,15 +527,30 @@
 		var mobileStage = S.stage === "mobile";
 		return h("form", { class: "screen", novalidate: true, onsubmit: verifyOtp }, [
 			h("h1", {}, "Enter the OTP"),
-			field("otp", "6 digit OTP", { inputmode: "numeric", maxlength: 6, required: true }),
+			field("otp", "6 digit OTP", {
+				inputmode: "numeric",
+				maxlength: 6,
+				required: true,
+			}),
 			S.flow === "aadhaar" && S.stage === "first"
-				? field("abha_mobile", "Your mobile number", { type: "tel", inputmode: "numeric", value: S.mobile, required: true })
+				? field("abha_mobile", "Your mobile number", {
+						type: "tel",
+						inputmode: "numeric",
+						value: S.mobile,
+						required: true,
+					})
 				: null,
-			mobileStage ? h("p", { class: "hint" }, "This OTP was sent to your mobile number.") : null,
+			mobileStage
+				? h("p", { class: "hint" }, "This OTP was sent to your mobile number.")
+				: null,
 			h("div", { class: "actions" }, [
-				button("Back", function () {
-					go("abhaMethod");
-				}, "secondary"),
+				button(
+					"Back",
+					function () {
+						go("abhaMethod");
+					},
+					"secondary",
+				),
 				h("button", { type: "submit", class: "btn primary" }, "Verify"),
 			]),
 		]);
@@ -438,40 +563,75 @@
 		var t = S.txn;
 
 		if (S.flow === "link") {
-			return run(call(ABHA, "verify_link_otp", { patient: p, txn_id: t, otp: otp }), function (linked) {
-				S.abha = linked;
-				go("abhaDone");
-			});
+			return run(
+				call(ABHA, "verify_link_otp", { patient: p, txn_id: t, otp: otp }),
+				function (linked) {
+					S.abha = linked;
+					go("abhaDone");
+				},
+			);
 		}
 		if (S.stage === "mobile") {
-			return run(call(ABHA, "verify_enrol_mobile_otp", { patient: p, txn_id: t, otp: otp }), loadSuggestions);
+			return run(
+				call(ABHA, "verify_enrol_mobile_otp", {
+					patient: p,
+					txn_id: t,
+					otp: otp,
+				}),
+				loadSuggestions,
+			);
 		}
 		if (S.flow === "mobile") {
-			return run(call(ABHA, "verify_mobile_otp_create", { patient: p, txn_id: t, otp: otp }), function (verified) {
-				S.txn = verified.txn_id;
-				loadSuggestions();
-			});
+			return run(
+				call(ABHA, "verify_mobile_otp_create", {
+					patient: p,
+					txn_id: t,
+					otp: otp,
+				}),
+				function (verified) {
+					S.txn = verified.txn_id;
+					loadSuggestions();
+				},
+			);
 		}
 		S.mobile = value("abha_mobile") || S.mobile;
-		run(call(ABHA, "verify_aadhaar_otp", { patient: p, txn_id: t, otp: otp, mobile: S.mobile }), function (created) {
-			S.abha = created;
-			S.txn = created.txn_id || t;
-			if (created.mobile_linked) return loadSuggestions();
-			// The mobile given is not the Aadhaar-linked one: ABDM sends a second OTP to verify it
-			run(call(ABHA, "send_enrol_mobile_otp", { patient: p, txn_id: S.txn, mobile: S.mobile }), function (sent) {
-				S.txn = sent.txn_id;
-				S.stage = "mobile";
-				go("abhaOtp");
-			});
-		});
+		run(
+			call(ABHA, "verify_aadhaar_otp", {
+				patient: p,
+				txn_id: t,
+				otp: otp,
+				mobile: S.mobile,
+			}),
+			function (created) {
+				S.abha = created;
+				S.txn = created.txn_id || t;
+				if (created.mobile_linked) return loadSuggestions();
+				// The mobile given is not the Aadhaar-linked one: ABDM sends a second OTP to verify it
+				run(
+					call(ABHA, "send_enrol_mobile_otp", {
+						patient: p,
+						txn_id: S.txn,
+						mobile: S.mobile,
+					}),
+					function (sent) {
+						S.txn = sent.txn_id;
+						S.stage = "mobile";
+						go("abhaOtp");
+					},
+				);
+			},
+		);
 	}
 
 	function loadSuggestions() {
 		busy = false;
-		run(call(ABHA, "get_address_suggestions", { patient: S.patient.uhid }), function (found) {
-			S.suggestions = found.suggestions || [];
-			go("abhaAddress");
-		});
+		run(
+			call(ABHA, "get_address_suggestions", { patient: S.patient.uhid }),
+			function (found) {
+				S.suggestions = found.suggestions || [];
+				go("abhaAddress");
+			},
+		);
 	}
 
 	function abhaAddress() {
@@ -482,30 +642,52 @@
 						"div",
 						{ class: "actions stack" },
 						S.suggestions.map(function (address) {
-							return button(address, function () {
-								chooseAddress(address);
-							}, "secondary");
-						})
-				  )
-				: h("p", { class: "lead" }, "No suggestions are available. You can set your address later at the desk."),
-			button("Skip for now", function () {
-				S.abha = Object.assign({}, S.abha, { status: "created" });
-				go("abhaDone");
-			}, "secondary"),
+							return button(
+								address,
+								function () {
+									chooseAddress(address);
+								},
+								"secondary",
+							);
+						}),
+					)
+				: h(
+						"p",
+						{ class: "lead" },
+						"No suggestions are available. You can set your address later at the desk.",
+					),
+			button(
+				"Skip for now",
+				function () {
+					S.abha = Object.assign({}, S.abha, { status: "created" });
+					go("abhaDone");
+				},
+				"secondary",
+			),
 		]);
 	}
 
 	function chooseAddress(address) {
-		run(call(ABHA, "choose_address", { patient: S.patient.uhid, abha_address: address }), function (saved) {
-			S.abha = Object.assign({}, S.abha, saved);
-			go("abhaDone");
-		});
+		run(
+			call(ABHA, "choose_address", {
+				patient: S.patient.uhid,
+				abha_address: address,
+			}),
+			function (saved) {
+				S.abha = Object.assign({}, S.abha, saved);
+				go("abhaDone");
+			},
+		);
 	}
 
 	function abhaDone() {
 		var a = S.abha || {};
 		return h("div", { class: "screen" }, [
-			h("h1", {}, S.flow === "link" ? "Your ABHA is linked" : "Your ABHA is ready"),
+			h(
+				"h1",
+				{},
+				S.flow === "link" ? "Your ABHA is linked" : "Your ABHA is ready",
+			),
 			h("dl", { class: "facts" }, [
 				a.masked_abha_number ? h("dt", {}, "ABHA number") : null,
 				a.masked_abha_number ? h("dd", {}, a.masked_abha_number) : null,
@@ -513,9 +695,13 @@
 				a.masked_abha_address ? h("dd", {}, a.masked_abha_address) : null,
 			]),
 			h("div", { class: "actions" }, [
-				button("Back to my token", function () {
-					go("result");
-				}, "secondary"),
+				button(
+					"Back to my token",
+					function () {
+						go("result");
+					},
+					"secondary",
+				),
 				button("Done", reset),
 			]),
 		]);
