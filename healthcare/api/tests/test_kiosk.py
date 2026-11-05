@@ -3,12 +3,15 @@
 
 import contextlib
 import types
+from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, nowdate
 
-from healthcare.api import kiosk, kiosk_common
+from healthcare.api import kiosk, kiosk_abha, kiosk_common
+from healthcare.regional.india.abdm.api import enrol, profile
+from healthcare.regional.india.abdm.utils.abha_client import AbhaClient
 from healthcare.kiosk_setup import KIOSK_DOCTYPES, KIOSK_ROLE, ensure_kiosk_role_and_permissions
 
 PERM_TYPES = ("read", "write", "create", "delete", "submit", "cancel", "amend", "report", "export", "import", "share", "print", "email", "select")
@@ -595,3 +598,217 @@ class TestKioskBooking(KioskTestCase):
 		for user in ("Guest", STAFF_USER):
 			frappe.set_user(user)
 			self.assertRaises(frappe.PermissionError, kiosk.book_appointment, registered["uhid"])
+
+
+AADHAAR = "234567890124"  # shape only; the M1 call is mocked
+ABHA_NUMBER = "91-1234-5678-9012"
+
+
+def m1(module, name, **kwargs):
+	"""Stand-in for an M1 function that records who it ran as."""
+	ran_as = []
+
+	def fake(*args, **kw):
+		ran_as.append(frappe.session.user)
+		return kwargs.get("return_value", {})
+
+	mock = patch.object(module, name, side_effect=fake)
+	mock.ran_as = ran_as
+	return mock
+
+
+class TestKioskAbha(KioskTestCase):
+	def setUp(self):
+		super().setUp()
+		self.configure(enable_abha=1)
+		self.uhid = kiosk.register_patient(**patient_args())["uhid"]
+
+	def test_send_otp_returns_only_a_txn_id_and_binds_it(self):
+		patcher = m1(enrol, "generate_aadhaar_otp", return_value={"message": "OTP sent", "txnId": "TXN-1"})
+		with patcher as fn:
+			result = kiosk_abha.send_aadhaar_otp(self.uhid, AADHAAR)
+		self.assertEqual(result, {"txn_id": "TXN-1"})
+		fn.assert_called_once_with(self.uhid, AADHAAR)
+		kiosk_common.assert_txn_bound("TXN-1", self.uhid)
+
+	def test_m1_runs_as_administrator_and_the_user_comes_back(self):
+		patcher = m1(enrol, "generate_aadhaar_otp", return_value={"txnId": "TXN-1"})
+		with patcher:
+			kiosk_abha.send_aadhaar_otp(self.uhid, AADHAAR)
+		self.assertEqual(patcher.ran_as, ["Administrator"])
+		self.assertEqual(frappe.session.user, KIOSK_USER)
+
+	def test_user_comes_back_when_m1_fails(self):
+		with patch.object(enrol, "generate_aadhaar_otp", side_effect=RuntimeError("boom")):
+			self.assertRaises(frappe.ValidationError, kiosk_abha.send_aadhaar_otp, self.uhid, AADHAAR)
+		self.assertEqual(frappe.session.user, KIOSK_USER)
+
+	def test_m1_error_text_is_not_passed_on(self):
+		leak = "This ABHA number is already linked to a different patient record (HLC-PAT-9999)"
+		with patch.object(enrol, "generate_aadhaar_otp", side_effect=frappe.ValidationError(leak)):
+			with self.assertRaises(frappe.ValidationError) as ctx:
+				kiosk_abha.send_aadhaar_otp(self.uhid, AADHAAR)
+		self.assertNotIn("HLC-PAT-9999", str(ctx.exception))
+
+	def test_every_step_refuses_a_patient_not_registered_in_this_session(self):
+		with session_id("device-2"):
+			calls = self.every_step(self.uhid, "TXN-X")
+			for name, call in calls.items():
+				with self.subTest(step=name), patch.object(enrol, "generate_aadhaar_otp") as a, patch.object(
+					enrol, "enrol_by_aadhaar"
+				) as b, patch.object(enrol, "set_abha_address") as c, patch.object(
+					profile, "request_abha_address_otp"
+				) as d:
+					self.assertRaises(frappe.PermissionError, call)
+					for fn in (a, b, c, d):
+						fn.assert_not_called()
+
+	def test_a_matched_patient_gets_no_abha_actions(self):
+		args = patient_args()
+		with session_id("device-1"):
+			kiosk.register_patient(**args)
+		with session_id("device-2"):
+			matched = kiosk.register_patient(**args)
+			self.assertTrue(matched["already_registered"])
+			with patch.object(enrol, "generate_aadhaar_otp") as fn:
+				self.assertRaises(frappe.PermissionError, kiosk_abha.send_aadhaar_otp, matched["uhid"], AADHAAR)
+				fn.assert_not_called()
+
+	def test_a_txn_this_session_did_not_start_is_refused(self):
+		with patch.object(enrol, "enrol_by_aadhaar") as fn:
+			self.assertRaises(frappe.PermissionError, kiosk_abha.verify_aadhaar_otp, self.uhid, "FOREIGN", "123456")
+			fn.assert_not_called()
+
+	def test_a_txn_cannot_be_used_for_another_patient(self):
+		other = kiosk.register_patient(**patient_args())["uhid"]
+		with patch.object(enrol, "generate_aadhaar_otp", return_value={"txnId": "TXN-A"}):
+			kiosk_abha.send_aadhaar_otp(self.uhid, AADHAAR)
+		with patch.object(enrol, "enrol_by_aadhaar") as fn:
+			self.assertRaises(frappe.PermissionError, kiosk_abha.verify_aadhaar_otp, other, "TXN-A", "123456")
+			fn.assert_not_called()
+
+	def test_verify_returns_only_masked_values(self):
+		with patch.object(enrol, "generate_aadhaar_otp", return_value={"txnId": "TXN-1"}):
+			kiosk_abha.send_aadhaar_otp(self.uhid, AADHAAR)
+		enrolled = {
+			"message": "ABHA created successfully",
+			"abha_number": ABHA_NUMBER,
+			"abha_address": "asha.verma@sbx",
+			"status": "PENDING",
+			"mobile_linked": True,
+			"txnId": "TXN-2",
+			"tokens": {"token": "SECRET-X-TOKEN"},
+		}
+		with patch.object(enrol, "enrol_by_aadhaar", return_value=enrolled):
+			result = kiosk_abha.verify_aadhaar_otp(self.uhid, "TXN-1", "123456", "9876543210")
+
+		self.assertEqual(set(result), {"status", "mobile_linked", "masked_abha_number", "txn_id"})
+		self.assertEqual(result["masked_abha_number"], "XX-XXXX-XXXX-9012")
+		self.assertEqual(result["txn_id"], "TXN-2")
+		kiosk_common.assert_txn_bound("TXN-2", self.uhid)
+		self.assertNotIn("SECRET", str(result))
+		self.assertNotIn("1234-5678", str(result))
+		self.assertNotIn("asha.verma", str(result))
+
+	def test_linking_strips_the_profile_m1_returns(self):
+		with patch.object(profile, "request_abha_address_otp", return_value={"txnId": "TXN-L"}):
+			self.assertEqual(kiosk_abha.send_link_otp(self.uhid, "asha.verma@sbx"), {"txn_id": "TXN-L"})
+		full_profile = {
+			"abha_number": "91123456789012",
+			"abha_address": "asha.verma@sbx",
+			"name": "Asha Verma",
+			"mobile": "9876543210",
+			"dob": "1990-05-17",
+			"gender": "F",
+			"x_token": "SECRET",
+		}
+		with patch.object(profile, "verify_abha_address_otp", return_value=full_profile):
+			result = kiosk_abha.verify_link_otp(self.uhid, "TXN-L", "123456")
+
+		self.assertEqual(set(result), {"status", "masked_abha_number", "masked_abha_address"})
+		self.assertEqual(result["masked_abha_address"], "as********@sbx")
+		for private in ("Asha Verma", "9876543210", "1990", "SECRET", "91123456789012"):
+			self.assertNotIn(private, str(result))
+
+	def test_mobile_create_flow(self):
+		with patch.object(enrol, "generate_mobile_otp", return_value={"txnId": "TXN-M"}):
+			self.assertEqual(kiosk_abha.send_mobile_otp_create(self.uhid, "9876543210"), {"txn_id": "TXN-M"})
+		with patch.object(enrol, "verify_mobile_otp_enrol", return_value={"txnId": "TXN-M2", "message": "OTP verified"}):
+			self.assertEqual(kiosk_abha.verify_mobile_otp_create(self.uhid, "TXN-M", "123456"), {"txn_id": "TXN-M2"})
+		with patch.object(enrol, "get_abha_suggestions", return_value={"suggestions": ["asha.v@sbx", "<script>", 7, "bad address@sbx"]}):
+			self.assertEqual(kiosk_abha.get_address_suggestions(self.uhid), {"suggestions": ["asha.v@sbx"]})
+		with patch.object(enrol, "set_abha_address", return_value={"message": "ABHA address confirmed"}) as fn:
+			result = kiosk_abha.choose_address(self.uhid, "asha.v@sbx")
+		fn.assert_called_once_with(self.uhid, "asha.v@sbx")
+		self.assertEqual(result, {"status": "saved", "masked_abha_address": "as****@sbx"})
+
+	def test_aadhaar_mobile_verification_flow(self):
+		with patch.object(enrol, "generate_aadhaar_otp", return_value={"txnId": "TXN-1"}):
+			kiosk_abha.send_aadhaar_otp(self.uhid, AADHAAR)
+		with patch.object(enrol, "send_mobile_otp", return_value={"txnId": "TXN-3"}):
+			self.assertEqual(kiosk_abha.send_enrol_mobile_otp(self.uhid, "TXN-1", "9876543210"), {"txn_id": "TXN-3"})
+		with patch.object(enrol, "verify_mobile_otp", return_value={"message": "Mobile verified"}):
+			self.assertEqual(kiosk_abha.verify_enrol_mobile_otp(self.uhid, "TXN-3", "123456"), {"status": "verified", "txn_id": "TXN-3"})
+
+	def test_bad_input_never_reaches_m1(self):
+		with patch.object(enrol, "generate_aadhaar_otp") as send, patch.object(enrol, "enrol_by_aadhaar") as enrol_fn, patch.object(
+			enrol, "set_abha_address"
+		) as address:
+			for aadhaar in ("12345", "abcdefghijkl", "", None):
+				self.assertRaises(frappe.ValidationError, kiosk_abha.send_aadhaar_otp, self.uhid, aadhaar)
+			kiosk_common.bind_txn("TXN-1", self.uhid)
+			for otp in ("12345", "1234567", "abcdef", None):
+				self.assertRaises(frappe.ValidationError, kiosk_abha.verify_aadhaar_otp, self.uhid, "TXN-1", otp)
+			for address_value in ("no-domain", "x@evil.com", "a@sbx", "<b>@sbx", None):
+				self.assertRaises(frappe.ValidationError, kiosk_abha.choose_address, self.uhid, address_value)
+			for fn in (send, enrol_fn, address):
+				fn.assert_not_called()
+
+	def test_otp_sends_are_limited_per_patient(self):
+		with patch.object(enrol, "generate_aadhaar_otp", return_value={"txnId": "T"}) as fn:
+			for _ in range(3):
+				kiosk_abha.send_aadhaar_otp(self.uhid, AADHAAR)
+			with self.assertRaises(frappe.ValidationError):
+				kiosk_abha.send_aadhaar_otp(self.uhid, AADHAAR)
+			self.assertEqual(fn.call_count, 3)
+		self.assertEqual(frappe.local.response.get("http_status_code"), 429)
+
+	def test_a_stranger_cannot_use_up_a_patients_otp_allowance(self):
+		with session_id("device-2"), patch.object(enrol, "generate_aadhaar_otp") as fn:
+			for _ in range(5):
+				self.assertRaises(frappe.PermissionError, kiosk_abha.send_aadhaar_otp, self.uhid, AADHAAR)
+			fn.assert_not_called()
+		with patch.object(enrol, "generate_aadhaar_otp", return_value={"txnId": "T"}):
+			self.assertEqual(kiosk_abha.send_aadhaar_otp(self.uhid, AADHAAR), {"txn_id": "T"})
+
+	def test_off_when_abha_is_disabled(self):
+		self.configure(enable_abha=0)
+		with patch.object(enrol, "generate_aadhaar_otp") as fn:
+			self.assertRaises(frappe.ValidationError, kiosk_abha.send_aadhaar_otp, self.uhid, AADHAAR)
+			fn.assert_not_called()
+
+	def test_denied_to_everyone_but_the_kiosk_user(self):
+		for user in ("Guest", STAFF_USER):
+			frappe.set_user(user)
+			self.assertRaises(frappe.PermissionError, kiosk_abha.send_aadhaar_otp, self.uhid, AADHAAR)
+
+	def test_the_m1_guard_still_refuses_a_kiosk_user(self):
+		# The unchanged guard: a create-only Kiosk user cannot drive M1 directly...
+		self.assertRaises(frappe.PermissionError, AbhaClient._assert_patient_permission, None, self.uhid)
+		# ...and it only passes inside the wrapper's elevation
+		with kiosk_common.elevated():
+			AbhaClient._assert_patient_permission(None, self.uhid)
+
+	def every_step(self, uhid, txn):
+		return {
+			"send_aadhaar_otp": lambda: kiosk_abha.send_aadhaar_otp(uhid, AADHAAR),
+			"verify_aadhaar_otp": lambda: kiosk_abha.verify_aadhaar_otp(uhid, txn, "123456"),
+			"send_enrol_mobile_otp": lambda: kiosk_abha.send_enrol_mobile_otp(uhid, txn, "9876543210"),
+			"verify_enrol_mobile_otp": lambda: kiosk_abha.verify_enrol_mobile_otp(uhid, txn, "123456"),
+			"send_mobile_otp_create": lambda: kiosk_abha.send_mobile_otp_create(uhid, "9876543210"),
+			"verify_mobile_otp_create": lambda: kiosk_abha.verify_mobile_otp_create(uhid, txn, "123456"),
+			"get_address_suggestions": lambda: kiosk_abha.get_address_suggestions(uhid),
+			"choose_address": lambda: kiosk_abha.choose_address(uhid, "asha.v@sbx"),
+			"send_link_otp": lambda: kiosk_abha.send_link_otp(uhid, "asha.v@sbx"),
+			"verify_link_otp": lambda: kiosk_abha.verify_link_otp(uhid, txn, "123456"),
+		}
