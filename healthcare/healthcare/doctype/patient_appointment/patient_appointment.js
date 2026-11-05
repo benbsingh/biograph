@@ -53,6 +53,12 @@ frappe.ui.form.on('Patient Appointment', {
 			}
 		});
 
+		frm.set_query('medical_camp', function() {
+			return {
+				filters: { 'status': ['in', ['Planned', 'Ongoing']] }
+			};
+		});
+
 		frm.set_query('service_unit', function() {
 			return {
 				query: 'healthcare.controllers.queries.get_healthcare_service_units',
@@ -239,6 +245,14 @@ frappe.ui.form.on('Patient Appointment', {
 				'service_unit': '',
 			});
 			frm.trigger('set_book_action');
+		} else if (frm.doc.appointment_for == 'Medical Camp') {
+			frm.set_value({
+				'practitioner': '',
+				'practitioner_name': '',
+				'department': '',
+				'service_unit': '',
+			});
+			frm.trigger('set_book_action');
 		} else {
 			if (frm.doc.appointment_for == 'Department') {
 				frm.set_value('service_unit', '');
@@ -339,6 +353,19 @@ frappe.ui.form.on('Patient Appointment', {
 		if (frm.doc.department && frm.doc.appointment_for == 'Department') {
 			frm.events.set_payment_details(frm);
 			frm.set_value("appointment_based_on_check_in", 1);
+		}
+	},
+
+	medical_camp: function(frm) {
+		if (frm.doc.medical_camp && frm.doc.appointment_for == 'Medical Camp') {
+			frm.set_value("appointment_based_on_check_in", 1);
+			frappe.db.get_value("Medical Camp", frm.doc.medical_camp, ["start_date", "end_date", "company"]).then(r => {
+				const camp = r.message;
+				if (!camp) return;
+				const today = frappe.datetime.get_today();
+				frm.set_value("appointment_date", today < camp.start_date ? camp.start_date : (today > camp.end_date ? camp.end_date : today));
+				if (!frm.doc.company) frm.set_value("company", camp.company);
+			});
 		}
 	},
 
