@@ -115,6 +115,70 @@ def get_token_slip(token=None):
 	return {"html": html}
 
 
+@frappe.whitelist()
+@common.kiosk_endpoint
+def book_appointment(patient=None):
+	"""Book today's camp appointment for a patient this session registered or matched.
+
+	Only available at a camp kiosk with appointments enabled: the camp supplies the appointment type, so no
+	practitioner or slot is chosen. Booking again the same day returns the appointment already made.
+	"""
+	common.throttle("book_appointment")
+	if not isinstance(patient, str) or not patient:
+		frappe.throw(_("This action is not available."), frappe.PermissionError)
+	common.assert_bound(patient)
+
+	settings = common.get_settings()
+	if not settings.enable_appointment or settings.patient_source != "Medical Camp":
+		frappe.throw(_("Appointment booking is not available."), frappe.ValidationError)
+	camp = common.get_active_camp(settings)
+	if not camp.appointment_type:
+		frappe.throw(_("Appointment booking is not available."), frappe.ValidationError)
+
+	today = nowdate()
+	appointment = frappe.db.get_value(
+		"Patient Appointment",
+		{
+			"patient": patient,
+			"medical_camp": camp.name,
+			"appointment_date": today,
+			"status": ("!=", "Cancelled"),
+		},
+		["name", "appointment_date", "appointment_time"],
+		as_dict=True,
+	)
+	if not appointment:
+		appointment = _create_camp_appointment(patient, camp, today)
+
+	return {
+		"appointment": appointment.name,
+		"date": str(appointment.appointment_date),
+		"time": str(appointment.appointment_time) if appointment.appointment_time else None,
+		"token_number": frappe.db.get_value("Kiosk Token", {"patient": patient, "token_date": today}, "token_number"),
+	}
+
+
+def _create_camp_appointment(patient, camp, date):
+	frappe.has_permission("Patient Appointment", "create", throw=True)
+	doc = frappe.get_doc(
+		{
+			"doctype": "Patient Appointment",
+			"patient": patient,
+			"appointment_for": "Medical Camp",
+			"medical_camp": camp.name,
+			"appointment_type": camp.appointment_type,
+			"appointment_date": date,
+			"company": camp.company,
+		}
+	)
+	try:
+		doc.insert(ignore_permissions=True)
+	except (frappe.ValidationError, frappe.DuplicateEntryError) as e:
+		frappe.log_error(title="Kiosk appointment refused", message=str(e)[:200])
+		frappe.throw(_("We could not book your appointment. Please ask for help at the desk."), frappe.ValidationError)
+	return doc
+
+
 # --------------------------------------------------------------------------------------------------
 # Validation
 # --------------------------------------------------------------------------------------------------

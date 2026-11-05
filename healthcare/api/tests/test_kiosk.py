@@ -16,6 +16,7 @@ PERM_TYPES = ("read", "write", "create", "delete", "submit", "cancel", "amend", 
 
 KIOSK_USER = "kiosk-test@example.com"
 STAFF_USER = "kiosk-staff-test@example.com"
+CAMP_APPOINTMENT_TYPE = "_Test Kiosk Camp Visit"
 
 
 @contextlib.contextmanager
@@ -54,9 +55,14 @@ def make_camp(**kwargs):
 	for name in ("_Test Camp Cardiology",):
 		if not frappe.db.exists("Medical Department", name):
 			frappe.get_doc({"doctype": "Medical Department", "department": name}).insert()
+	if not frappe.db.exists("Appointment Type", CAMP_APPOINTMENT_TYPE):
+		frappe.get_doc(
+			{"doctype": "Appointment Type", "appointment_type": CAMP_APPOINTMENT_TYPE, "allow_booking_for": "Medical Camp"}
+		).insert()
 	doc = {
 		"doctype": "Medical Camp",
 		"camp_name": "_Test Kiosk Camp",
+		"appointment_type": CAMP_APPOINTMENT_TYPE,
 		"status": "Ongoing",
 		"company": frappe.defaults.get_defaults().company,
 		"start_date": nowdate(),
@@ -512,3 +518,80 @@ class TestKioskSlip(KioskTestCase):
 		result = kiosk.register_patient(**patient_args())
 		kiosk.get_token_slip(result["token"])
 		self.assertEqual(frappe.session.user, KIOSK_USER)
+
+
+class TestKioskBooking(KioskTestCase):
+	def at_camp(self, **settings):
+		self.camp = make_camp()
+		self.configure(patient_source="Medical Camp", medical_camp=self.camp.name, enable_appointment=1, **settings)
+		return kiosk.register_patient(**patient_args())
+
+	def test_booking_returns_only_the_allow_listed_keys(self):
+		registered = self.at_camp()
+		result = kiosk.book_appointment(registered["uhid"])
+
+		self.assertEqual(set(result), {"appointment", "date", "time", "token_number"})
+		self.assertEqual(result["date"], nowdate())
+		self.assertEqual(result["token_number"], registered["token_number"])
+		appointment = frappe.db.get_value(
+			"Patient Appointment",
+			result["appointment"],
+			["patient", "appointment_for", "medical_camp", "appointment_type", "appointment_date"],
+			as_dict=True,
+		)
+		self.assertEqual(appointment.patient, registered["uhid"])
+		self.assertEqual(appointment.appointment_for, "Medical Camp")
+		self.assertEqual(appointment.medical_camp, self.camp.name)
+		self.assertEqual(appointment.appointment_type, CAMP_APPOINTMENT_TYPE)
+
+	def test_booking_twice_returns_the_same_appointment(self):
+		registered = self.at_camp()
+		first = kiosk.book_appointment(registered["uhid"])
+		count = frappe.db.count("Patient Appointment", {"patient": registered["uhid"]})
+		self.assertEqual(kiosk.book_appointment(registered["uhid"])["appointment"], first["appointment"])
+		self.assertEqual(frappe.db.count("Patient Appointment", {"patient": registered["uhid"]}), count)
+
+	def test_registration_works_with_booking_off(self):
+		self.configure()
+		registered = kiosk.register_patient(**patient_args())
+		self.assertTrue(registered["uhid"])
+		self.assertRaises(frappe.ValidationError, kiosk.book_appointment, registered["uhid"])
+
+	def test_booking_needs_a_camp_kiosk(self):
+		self.configure(enable_appointment=1)  # Walk-in source: Kiosk Settings switches it back off
+		registered = kiosk.register_patient(**patient_args())
+		self.assertRaises(frappe.ValidationError, kiosk.book_appointment, registered["uhid"])
+
+	def test_unbound_patient_is_refused(self):
+		registered = self.at_camp()
+		with session_id("device-2"):
+			self.assertRaises(frappe.PermissionError, kiosk.book_appointment, registered["uhid"])
+		for bad in ("NO-SUCH-PATIENT", "", None, ["x"]):
+			self.assertRaises(frappe.PermissionError, kiosk.book_appointment, bad)
+
+	def test_matched_patient_can_book(self):
+		args = patient_args()
+		self.at_camp()
+		with session_id("device-1"):
+			kiosk.register_patient(**args)
+		with session_id("device-2"):
+			matched = kiosk.register_patient(**args)
+			self.assertTrue(kiosk.book_appointment(matched["uhid"])["appointment"])
+
+	def test_closed_camp_refuses_booking(self):
+		registered = self.at_camp()
+		for change in ({"status": "Completed"}, {"status": "Cancelled"}, {"end_date": add_days(nowdate(), -1), "start_date": add_days(nowdate(), -2)}):
+			frappe.db.set_value("Medical Camp", self.camp.name, {"status": "Ongoing", "start_date": nowdate(), "end_date": add_days(nowdate(), 1), **change})
+			self.assertRaises(frappe.ValidationError, kiosk.book_appointment, registered["uhid"])
+		self.assertEqual(frappe.db.count("Patient Appointment", {"patient": registered["uhid"]}), 0)
+
+	def test_camp_without_appointment_type_is_unavailable(self):
+		registered = self.at_camp()
+		frappe.db.set_value("Medical Camp", self.camp.name, "appointment_type", None)
+		self.assertRaises(frappe.ValidationError, kiosk.book_appointment, registered["uhid"])
+
+	def test_booking_denied_to_other_users(self):
+		registered = self.at_camp()
+		for user in ("Guest", STAFF_USER):
+			frappe.set_user(user)
+			self.assertRaises(frappe.PermissionError, kiosk.book_appointment, registered["uhid"])
