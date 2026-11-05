@@ -25,7 +25,6 @@ _AADHAAR_RE = re.compile(r"^\d{12}$")
 _MOBILE_RE = re.compile(r"^\d{10}$")
 _ABHA_ADDRESS_RE = re.compile(r"^[A-Za-z0-9._]{3,64}@(abdm|sbx)$")
 _OTP_SYSTEMS = ("abdm", "aadhaar")
-_UNAVAILABLE = "ABHA is not available."
 
 
 # --------------------------------------------------------------------------------------------------
@@ -176,7 +175,7 @@ def _run(endpoint, patient, call, txn_id=None, otp_send=False):
 		frappe.throw(_("This action is not available."), frappe.PermissionError)
 	common.throttle(endpoint)
 	if not common.get_settings().enable_abha:
-		frappe.throw(_(_UNAVAILABLE), frappe.ValidationError)
+		frappe.throw(_("ABHA is not available."), frappe.ValidationError)
 	common.assert_bound(patient, require_created=True)
 	if txn_id is not None:
 		common.assert_txn_bound(txn_id, patient)
@@ -190,10 +189,10 @@ def _run(endpoint, patient, call, txn_id=None, otp_send=False):
 	except (frappe.ValidationError, frappe.PermissionError) as e:
 		# M1's text can name another patient's UHID or an ABHA number, so neither the screen nor the log gets
 		# it: the endpoint and the exception class tell staff which step was refused.
-		frappe.log_error(title="Kiosk ABHA step refused", message=f"{endpoint}: {type(e).__name__}")
-		frappe.throw(
+		common.refuse(
+			"Kiosk ABHA step refused",
+			f"{endpoint}: {type(e).__name__}",
 			_("We could not complete this step. Please check what you entered, or ask for help at the desk."),
-			frappe.ValidationError,
 		)
 
 

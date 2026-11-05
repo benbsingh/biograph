@@ -44,6 +44,16 @@ def get_enabled_settings():
 	return settings
 
 
+def refuse(title, detail, message):
+	"""Answer a refused step with a generic message, after logging what refused (endpoint and exception class only).
+
+	defer_insert: the request ends in an exception, and Frappe rolls the transaction back, which would take an
+	Error Log row inserted here with it. A deferred log goes through Redis and survives.
+	"""
+	frappe.log_error(title=title, message=detail, defer_insert=True)
+	frappe.throw(message, frappe.ValidationError)
+
+
 def kiosk_endpoint(fn):
 	"""Apply under @frappe.whitelist(): POST only, kiosk enabled, Kiosk role, and no internal detail in errors."""
 
@@ -57,8 +67,7 @@ def kiosk_endpoint(fn):
 			raise
 		except Exception as e:
 			# Class and endpoint only: a traceback would carry the request's locals, which hold patient data.
-			frappe.log_error(title="Kiosk request failed", message=f"{fn.__name__}: {type(e).__name__}")
-			frappe.throw(_("Something went wrong. Please ask for help at the desk."), frappe.ValidationError)
+			refuse("Kiosk request failed", f"{fn.__name__}: {type(e).__name__}", _("Something went wrong. Please ask for help at the desk."))
 
 	return require_post(guarded)
 

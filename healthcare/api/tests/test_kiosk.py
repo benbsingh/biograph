@@ -12,7 +12,10 @@ from frappe.utils import add_days, nowdate
 import json
 import re
 
+from redis.exceptions import LockError
+
 from healthcare.api import kiosk, kiosk_abha, kiosk_common
+from healthcare import setup as healthcare_setup
 from healthcare.www import kiosk as kiosk_page
 from healthcare.regional.india.abdm.api import enrol, profile
 from healthcare.regional.india.abdm.utils.abha_client import AbhaClient
@@ -185,6 +188,28 @@ class TestKioskRole(IntegrationTestCase):
 		after = {dt: frappe.db.count("Custom DocPerm", {"parent": dt}) for dt in KIOSK_DOCTYPES}
 		self.assertEqual(before, after)
 		self.assertEqual(frappe.db.count("Role", {"name": KIOSK_ROLE}), 1)
+
+	def test_duplicate_tokens_are_removed_before_the_unique_index_is_added(self):
+		# A site that issued tokens before the index existed must still migrate. Dropping the index is DDL,
+		# which commits, so these rows are real and the test removes them itself.
+		patient = "KIOSK-DUP-TEST"
+		index = "unique_kiosk_token_patient_day"
+		frappe.db.sql(f"alter table `tabKiosk Token` drop index `{index}`")
+		try:
+			names = []
+			for _ in range(2):
+				doc = frappe.get_doc(
+					{"doctype": "Kiosk Token", "patient": patient, "patient_name": "x", "token_date": nowdate()}
+				)
+				doc.insert(ignore_permissions=True, ignore_links=True)
+				names.append(doc.name)
+			ensure_kiosk_role_and_permissions()  # must not raise on the duplicate
+			self.assertEqual(frappe.get_all("Kiosk Token", filters={"patient": patient}, pluck="name"), [min(names)])
+			self.assertTrue(frappe.db.sql("show index from `tabKiosk Token` where Key_name = %s", index))
+		finally:
+			frappe.db.delete("Kiosk Token", {"patient": patient})
+			frappe.db.commit()
+			ensure_kiosk_role_and_permissions()  # leaves the index in place for the other tests
 
 	def test_other_roles_keep_their_permissions(self):
 		# Frappe ignores every standard DocPerm once a single Custom DocPerm exists for the doctype,
@@ -581,6 +606,83 @@ class TestKioskRegister(KioskTestCase):
 		self.assertEqual(token.name, first["token"])
 		self.assertEqual(frappe.db.count("Kiosk Token", {"patient": first["uhid"], "token_date": nowdate()}), 1)
 
+	def test_a_lost_token_race_leaves_no_unique_message_for_the_screen(self):
+		first = kiosk.register_patient(**patient_args())
+		patient = frappe.get_doc("Patient", first["uhid"])
+		real_get_value = frappe.db.get_value
+		calls = []
+
+		def stale_then_real(doctype, *args, **kwargs):
+			if doctype == "Kiosk Token" and not calls:
+				calls.append(1)
+				return None
+			return real_get_value(doctype, *args, **kwargs)
+
+		frappe.clear_messages()
+		with patch.object(frappe.db, "get_value", side_effect=stale_then_real), patch.object(frappe.db, "rollback"):
+			kiosk._issue_token(patient, None)
+		self.assertFalse([m for m in frappe.local.message_log if "unique" in str(m).lower()])
+
+	def test_a_token_insert_failure_is_answered_generically(self):
+		real_insert = frappe.model.document.Document.insert
+
+		def insert(doc, *args, **kwargs):
+			if doc.doctype == "Kiosk Token":
+				raise frappe.ValidationError("HLC-PAT-9999 Asha Verma")
+			return real_insert(doc, *args, **kwargs)
+
+		with patch.object(frappe.model.document.Document, "insert", insert):
+			with self.assertRaises(frappe.ValidationError) as ctx:
+				kiosk.register_patient(**patient_args())
+		self.assertNotIn("Asha", str(ctx.exception))
+		self.assertNotIn("HLC-PAT-9999", str(ctx.exception))
+
+	def test_the_returning_patients_binding_is_written_inside_the_lock(self):
+		with self.watch_locks() as events:
+			with patch.object(kiosk_common, "bind_patient", side_effect=lambda *a, **k: events.append("bind")):
+				kiosk.register_patient(**patient_args())
+		self.assertEqual(events, ["lock", "commit", "bind", "commit", "unlock"])
+
+	def test_a_busy_lock_says_so_and_logs_only_the_class(self):
+		with patch.object(frappe.cache, "lock", side_effect=LockError("Asha 9876543210")), patch.object(
+			frappe, "log_error"
+		) as log:
+			with self.assertRaises(frappe.ValidationError) as ctx:
+				kiosk.register_patient(**patient_args())
+		self.assertIn("busy", str(ctx.exception))
+		self.assertNotIn("9876543210", str(log.call_args_list))
+		self.assertTrue(log.call_args_list)
+
+	def test_a_lost_lock_after_the_work_still_answers_busy(self):
+		# The patient is committed before the lock is released, so a retry finds them rather than a duplicate.
+		@contextlib.contextmanager
+		def lock_lost_at_release(*args, **kwargs):
+			yield
+			raise LockError("not owned")
+
+		with patch.object(frappe.cache, "lock", side_effect=lock_lost_at_release):
+			with self.assertRaises(frappe.ValidationError) as ctx:
+				kiosk.register_patient(**patient_args())
+		self.assertIn("busy", str(ctx.exception))
+
+	def test_every_refusal_is_logged_deferred_so_the_rollback_keeps_it(self):
+		# The request ends in an exception, so Frappe rolls back; a non-deferred Error Log row would go too.
+		with patch.object(frappe, "log_error") as log:
+			with patch.object(frappe.model.document.Document, "insert", side_effect=frappe.ValidationError("x")):
+				self.assertRaises(frappe.ValidationError, kiosk.register_patient, **patient_args())
+			with patch.object(kiosk, "_validate_demographics", side_effect=RuntimeError("Asha")):
+				self.assertRaises(frappe.ValidationError, kiosk.register_patient, **patient_args(first_name="Other"))
+		self.assertEqual(len(log.call_args_list), 2)
+		for call in log.call_args_list:
+			self.assertTrue(call.kwargs.get("defer_insert"), call)
+
+	def test_a_missing_create_permission_is_answered_generically(self):
+		with patch.object(frappe, "has_permission", return_value=False), patch.object(frappe, "log_error") as log:
+			with self.assertRaises(frappe.ValidationError) as ctx:
+				kiosk.register_patient(**patient_args())
+		self.assertIn("ask for help", str(ctx.exception))
+		self.assertTrue(log.call_args_list[0].kwargs.get("defer_insert"))
+
 	def test_a_returning_patient_is_greeted_by_first_name_only(self):
 		args = patient_args()
 		with session_id("device-1"):
@@ -667,6 +769,16 @@ class TestKioskSlip(KioskTestCase):
 		result = kiosk.register_patient(**patient_args())
 		kiosk.get_token_slip(result["token"])
 		self.assertEqual(frappe.session.user, KIOSK_USER)
+
+
+class TestKioskSlipFailure(KioskTestCase):
+	def test_a_print_failure_is_answered_generically(self):
+		result = kiosk.register_patient(**patient_args())
+		with patch.object(frappe, "get_print", side_effect=frappe.PermissionError("Not permitted for HLC-PAT-9999")):
+			with self.assertRaises(frappe.ValidationError) as ctx:
+				kiosk.get_token_slip(result["token"])
+		self.assertNotIn("HLC-PAT-9999", str(ctx.exception))
+		self.assertIn("slip", str(ctx.exception))
 
 
 class TestKioskBooking(KioskTestCase):
@@ -1072,6 +1184,11 @@ class TestKioskAssets(IntegrationTestCase):
 		self.assertNotIn("http://", js)
 		self.assertNotIn("https://", js)
 
+	def test_a_refused_step_tells_the_patient_to_start_again_not_that_the_kiosk_is_signed_out(self):
+		js = self.source("kiosk.js")
+		self.assertIn("Your session has ended. Please start again.", js)
+		self.assertRegex(js, r'status === 401\) return "This kiosk is not signed in')
+
 	def test_js_keeps_nothing_and_injects_no_html(self):
 		js = self.source("kiosk.js")
 		for forbidden in ("localStorage", "sessionStorage", "document.cookie", "innerHTML", "outerHTML", "insertAdjacentHTML", "eval(", "location.search", "location.hash"):
@@ -1082,3 +1199,12 @@ class TestKioskAssets(IntegrationTestCase):
 			html = f.read()
 		self.assertEqual(len(re.findall(r"<script\b", html)), 2)  # boot JSON + kiosk.js
 		self.assertNotRegex(html, r"https?://")
+
+
+class TestKioskSetupHook(IntegrationTestCase):
+	def test_kiosk_setup_runs_even_when_healthcare_is_already_set_up(self):
+		with patch("healthcare.kiosk_setup.ensure_kiosk_role_and_permissions") as ensure, patch.object(
+			frappe.db, "exists", return_value=True
+		):  # the "Cardiology exists" early return
+			healthcare_setup.setup_healthcare()
+		ensure.assert_called_once()

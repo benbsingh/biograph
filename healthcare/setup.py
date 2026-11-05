@@ -260,13 +260,13 @@ data = {
 
 
 def setup_healthcare():
+	from healthcare.kiosk_setup import ensure_kiosk_role_and_permissions
+
+	ensure_kiosk_role_and_permissions()  # idempotent, so it runs before the "already setup" return too
+
 	if frappe.db.exists("Medical Department", "Cardiology"):
 		# already setup
 		return
-
-	from healthcare.kiosk_setup import ensure_kiosk_role_and_permissions
-
-	ensure_kiosk_role_and_permissions()
 
 	if data.get("custom_fields"):
 		create_custom_fields(data.get("custom_fields"), ignore_validate=True)

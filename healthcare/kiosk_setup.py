@@ -15,6 +15,8 @@ _PERM_TYPES = (
 
 
 def ensure_kiosk_role_and_permissions():
+	# Every migrate resets the Kiosk rows to create-only on purpose: this is a security boundary, so a loosened
+	# (or tightened) Custom DocPerm made by hand in Role Permission Manager does not survive.
 	_ensure_role()
 	for doctype in KIOSK_DOCTYPES:
 		_ensure_create_only(doctype)
@@ -24,6 +26,18 @@ def ensure_kiosk_role_and_permissions():
 def _ensure_one_token_per_patient_per_day():
 	"""Back the kiosk's registration lock with the database: a patient gets one token a day, however requests race."""
 	if frappe.db.table_exists("Kiosk Token"):
+		# A site that issued tokens before the index existed may hold two for one patient and day, and the ALTER
+		# would fail on them (and so would every migrate). Keep the lowest-named token of each pair.
+		extras = frappe.db.sql(
+			"""select name from `tabKiosk Token` t where exists (
+				select 1 from `tabKiosk Token` o
+				where o.patient = t.patient and o.token_date = t.token_date and o.name < t.name)""",
+			pluck="name",
+		)
+		for name in extras:
+			frappe.delete_doc("Kiosk Token", name, ignore_permissions=True, force=True)
+		if extras:
+			frappe.log_error(title="Kiosk Token duplicates removed", message=f"{len(extras)} duplicate token(s)", defer_insert=True)
 		frappe.db.add_unique("Kiosk Token", ["patient", "token_date"], constraint_name="unique_kiosk_token_patient_day")
 
 
