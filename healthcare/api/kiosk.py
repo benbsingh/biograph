@@ -96,6 +96,25 @@ def register_patient(
 	}
 
 
+@frappe.whitelist()
+@common.kiosk_endpoint
+def get_token_slip(token=None):
+	"""The printable slip, only for a token whose patient this kiosk session registered or matched.
+
+	The slip prints the Kiosk Token, which holds the UHID, name, number, date and facility and nothing else,
+	so rendering it needs no read access to the Patient.
+	"""
+	common.throttle("get_token_slip")
+	patient = frappe.db.get_value("Kiosk Token", token, "patient") if isinstance(token, str) and token else None
+	if not patient:
+		frappe.throw(_("This action is not available."), frappe.PermissionError)  # same answer as a foreign token
+	common.assert_bound(patient)
+
+	with common.elevated():  # printing checks the viewer's print permission on Kiosk Token, which Kiosk lacks
+		html = frappe.get_print("Kiosk Token", token, "Patient Token Slip")
+	return {"html": html}
+
+
 # --------------------------------------------------------------------------------------------------
 # Validation
 # --------------------------------------------------------------------------------------------------

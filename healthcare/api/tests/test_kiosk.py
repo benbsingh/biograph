@@ -468,3 +468,47 @@ class TestKioskRegister(KioskTestCase):
 		result = kiosk.register_patient(**patient_args())
 		kiosk.end_session()
 		self.assertRaises(frappe.PermissionError, kiosk_common.assert_bound, result["uhid"])
+
+
+class TestKioskSlip(KioskTestCase):
+	def test_slip_shows_the_five_values_and_nothing_private(self):
+		camp = make_camp()
+		self.configure(patient_source="Medical Camp", medical_camp=camp.name)
+		args = patient_args()
+		result = kiosk.register_patient(**args)
+
+		html = kiosk.get_token_slip(result["token"])["html"]
+		today = frappe.utils.format_date(nowdate())
+
+		for expected in (result["uhid"], result["patient_name"], str(result["token_number"]), camp.camp_name, today):
+			self.assertIn(expected, html)
+		for private in ("1990", "17-05", args["mobile"], args["mobile"][-4:], "ABHA", "abha"):
+			self.assertNotIn(private, html)
+
+	def test_slip_for_a_matched_patient(self):
+		args = patient_args()
+		with session_id("device-1"):
+			first = kiosk.register_patient(**args)
+		with session_id("device-2"):
+			again = kiosk.register_patient(**args)
+			self.assertIn(first["uhid"], kiosk.get_token_slip(again["token"])["html"])
+
+	def test_other_session_cannot_get_the_slip(self):
+		with session_id("device-1"):
+			result = kiosk.register_patient(**patient_args())
+		with session_id("device-2"):
+			self.assertRaises(frappe.PermissionError, kiosk.get_token_slip, result["token"])
+
+	def test_unknown_token_answers_like_a_foreign_one(self):
+		for token in ("KT-19000101-0001", "", None, ["x"]):
+			self.assertRaises(frappe.PermissionError, kiosk.get_token_slip, token)
+
+	def test_slip_denied_to_other_users(self):
+		result = kiosk.register_patient(**patient_args())
+		frappe.set_user(STAFF_USER)
+		self.assertRaises(frappe.PermissionError, kiosk.get_token_slip, result["token"])
+
+	def test_user_is_restored_after_printing(self):
+		result = kiosk.register_patient(**patient_args())
+		kiosk.get_token_slip(result["token"])
+		self.assertEqual(frappe.session.user, KIOSK_USER)
