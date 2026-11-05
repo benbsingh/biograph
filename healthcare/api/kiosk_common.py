@@ -16,7 +16,6 @@ from healthcare.regional.india.abdm.utils.http_guards import require_post
 
 # Slack on top of the idle timeout so a patient finishing at the last second keeps their session.
 SESSION_GRACE_SECONDS = 30
-RATE_LIMIT_STATUS_CODE = 429
 API_CALL_LIMIT = 10  # per endpoint, per window
 API_CALL_WINDOW = 60
 OTP_SEND_LIMIT = 3  # per patient, per window
@@ -54,7 +53,7 @@ def kiosk_endpoint(fn):
 			require_kiosk_user()
 			get_enabled_settings()
 			return fn(*args, **kwargs)
-		except (frappe.ValidationError, frappe.PermissionError):
+		except (frappe.ValidationError, frappe.PermissionError, frappe.TooManyRequestsError):
 			raise
 		except Exception as e:
 			# Class and endpoint only: a traceback would carry the request's locals, which hold patient data.
@@ -71,18 +70,20 @@ def _hit(name: str, limit: int, window: int):
 	raw key but writes through frappe.cache.set_value, which prefixes and pickles, so it never sees its own count.
 	"""
 	key = frappe.cache.make_key(f"kiosk:rate:{name}")
-	count = frappe.cache.incr(key)
-	if count == 1:
-		frappe.cache.expire(key, window)
+	# One MULTI/EXEC: SET NX EX gives the key its expiry the moment it is created, so a worker dying between
+	# the two calls can never leave a counter with no expiry (which would lock every kiosk out for good).
+	pipe = frappe.cache.pipeline()
+	pipe.set(key, 0, ex=window, nx=True)
+	pipe.incr(key)
+	count = pipe.execute()[-1]
 	if count > limit:
-		frappe.local.response["http_status_code"] = RATE_LIMIT_STATUS_CODE
-		frappe.throw(_("Too many requests. Please wait a minute and try again."), frappe.ValidationError)
+		raise frappe.TooManyRequestsError(_("Too many requests. Please wait a minute and try again."))
 
 
 def throttle(endpoint: str | None = None, otp_patient: str | None = None):
 	"""10 calls a minute per endpoint, and 3 OTP sends per 10 minutes per patient.
 
-	Every kiosk shares one user, so the limits are shared by all devices; a breach is HTTP 429.
+	Every kiosk shares one user, so the limits are shared by all devices; a breach is a TooManyRequestsError (HTTP 429).
 	"""
 	if endpoint:
 		_hit(f"{frappe.session.user}:{endpoint}", API_CALL_LIMIT, API_CALL_WINDOW)
@@ -97,12 +98,20 @@ def elevated():
 	The only way through AbhaClient._assert_patient_permission for a create-only Kiosk user. Call it only after
 	assert_bound() has proved the patient belongs to this kiosk session.
 	"""
+	# frappe.set_user() also overwrites session.sid with the username and empties form_dict and session.data.
+	# Put them back, or the session binding is looked up under the username instead of this device's sid.
 	previous = frappe.session.user
+	sid = frappe.session.sid
+	form_dict = frappe.local.form_dict
+	session_data = frappe.session.data
 	frappe.set_user("Administrator")
 	try:
 		yield
 	finally:
 		frappe.set_user(previous)
+		frappe.local.session.sid = sid
+		frappe.local.form_dict = form_dict
+		frappe.local.session.data = session_data
 
 
 # --------------------------------------------------------------------------------------------------
@@ -141,47 +150,58 @@ def get_active_camp(settings):
 # honours the ones it handed out itself.
 
 
-def _session_key():
-	return f"kiosk:session:{frappe.session.sid}"
+def _session_prefix():
+	return f"kiosk:session:{frappe.session.sid}:"
 
 
-def _load_session():
-	return frappe.cache.get_value(_session_key(), expires=True) or {"patients": {}, "txns": {}}
+def _ttl():
+	return (get_settings().idle_timeout or 60) + SESSION_GRACE_SECONDS
 
 
-def _save_session(state):
-	ttl = (get_settings().idle_timeout or 60) + SESSION_GRACE_SECONDS
-	frappe.cache.set_value(_session_key(), state, expires_in_sec=ttl)
+# One key per patient and per transaction, so parallel requests (a double-tap, a print beside a booking)
+# never overwrite each other's binding the way a single read-modify-write dict would.
+def _patient_key(patient):
+	return f"{_session_prefix()}patient:{patient}"
+
+
+def _txn_key(txn_id):
+	return f"{_session_prefix()}txn:{txn_id}"
+
+
+def _touch(key):
+	"""A session in use stays alive: a slow OTP or a long ABHA flow must not outlive its binding."""
+	frappe.cache.expire_key(key, _ttl())
 
 
 def bind_patient(patient: str, created: bool):
-	state = _load_session()
+	key = _patient_key(patient)
+	entry = frappe.cache.get_value(key, expires=True) or {}
 	# created is sticky: a patient this session made stays eligible for ABHA even if re-submitted
-	entry = state["patients"].get(patient, {})
-	state["patients"][patient] = {"created": bool(created or entry.get("created"))}
-	_save_session(state)
+	frappe.cache.set_value(key, {"created": bool(created or entry.get("created"))}, expires_in_sec=_ttl())
 
 
 def assert_bound(patient: str, require_created: bool = False):
 	"""Refuse a patient this kiosk session did not register (require_created) or at least match."""
-	entry = _load_session()["patients"].get(patient)
+	key = _patient_key(patient)
+	entry = frappe.cache.get_value(key, expires=True)
 	if not entry or (require_created and not entry["created"]):
 		frappe.throw(_("This action is not available."), frappe.PermissionError)
+	_touch(key)
 
 
 def bind_txn(txn_id: str, patient: str):
 	if not txn_id:
 		return
-	state = _load_session()
-	state["txns"][txn_id] = patient
-	_save_session(state)
+	frappe.cache.set_value(_txn_key(txn_id), patient, expires_in_sec=_ttl())
 
 
 def assert_txn_bound(txn_id: str, patient: str):
 	"""Refuse an OTP transaction this session did not start for this patient (stops replay of a foreign txn)."""
-	if not txn_id or _load_session()["txns"].get(txn_id) != patient:
+	key = _txn_key(txn_id) if txn_id else None
+	if not key or frappe.cache.get_value(key, expires=True) != patient:
 		frappe.throw(_("This action is not available."), frappe.PermissionError)
+	_touch(key)
 
 
 def clear_session():
-	frappe.cache.delete_value(_session_key())
+	frappe.cache.delete_keys(_session_prefix())

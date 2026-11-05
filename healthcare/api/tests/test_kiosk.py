@@ -233,17 +233,43 @@ class TestKioskGuards(KioskTestCase):
 		finally:
 			frappe.local.request = None
 
-	def test_rate_limit_sets_429(self):
+	def test_rate_limit_raises_a_429(self):
 		for _ in range(10):
 			kiosk_common.throttle("kiosk_test")
-		with self.assertRaises(frappe.ValidationError):
+		with self.assertRaises(frappe.TooManyRequestsError) as ctx:
 			kiosk_common.throttle("kiosk_test")
-		self.assertEqual(frappe.local.response.get("http_status_code"), 429)
+		# Frappe answers with the exception's own status; a preset response code would be overwritten with 417
+		self.assertEqual(ctx.exception.http_status_code, 429)
+
+	def test_rate_limit_counter_always_has_an_expiry(self):
+		kiosk_common.throttle("kiosk_ttl_test")
+		key = frappe.cache.make_key(f"kiosk:rate:{frappe.session.user}:kiosk_ttl_test")
+		self.assertGreater(frappe.cache.ttl(key), 0)
+
+	def test_rate_limit_error_passes_through_the_endpoint_guard(self):
+		@kiosk_common.kiosk_endpoint
+		def slow():
+			kiosk_common.throttle("kiosk_guard_test")
+
+		for _ in range(10):
+			slow()
+		self.assertRaises(frappe.TooManyRequestsError, slow)
 
 	def test_elevated_restores_user(self):
+		with session_id("sid-A"):
+			with kiosk_common.elevated():
+				self.assertEqual(frappe.session.user, "Administrator")
+			self.assertEqual(frappe.session.user, KIOSK_USER)
+			# set_user() would leave the username here, and the session binding would be looked up under it
+			self.assertEqual(frappe.session.sid, "sid-A")
+
+	def test_elevated_restores_request_state(self):
+		frappe.local.form_dict = frappe._dict(patient="PAT-1")
+		frappe.local.session.data = frappe._dict(marker=1)
 		with kiosk_common.elevated():
-			self.assertEqual(frappe.session.user, "Administrator")
-		self.assertEqual(frappe.session.user, KIOSK_USER)
+			pass
+		self.assertEqual(frappe.local.form_dict.patient, "PAT-1")
+		self.assertEqual(frappe.local.session.data.marker, 1)
 
 	def test_elevated_restores_user_on_error(self):
 		with self.assertRaises(ValueError):
@@ -264,6 +290,27 @@ class TestKioskGuards(KioskTestCase):
 		with session_id("sid-B"):
 			self.assertRaises(frappe.PermissionError, kiosk_common.assert_bound, "PAT-1")
 			self.assertRaises(frappe.PermissionError, kiosk_common.assert_txn_bound, "TXN-1", "PAT-1")
+
+	def test_session_binding_expiry_is_refreshed_on_use(self):
+		with session_id("sid-A"):
+			kiosk_common.bind_patient("PAT-1", created=True)
+			kiosk_common.bind_txn("TXN-1", "PAT-1")
+			pkey = frappe.cache.make_key(kiosk_common._patient_key("PAT-1"))
+			tkey = frappe.cache.make_key(kiosk_common._txn_key("TXN-1"))
+			frappe.cache.expire(pkey, 5)
+			frappe.cache.expire(tkey, 5)
+			kiosk_common.assert_bound("PAT-1")
+			kiosk_common.assert_txn_bound("TXN-1", "PAT-1")
+			self.assertGreater(frappe.cache.ttl(pkey), 30)
+			self.assertGreater(frappe.cache.ttl(tkey), 30)
+
+	def test_binding_one_patient_does_not_drop_another(self):
+		with session_id("sid-A"):
+			kiosk_common.bind_patient("PAT-1", created=True)
+			kiosk_common.bind_txn("TXN-1", "PAT-1")
+			kiosk_common.bind_patient("PAT-2", created=False)
+			kiosk_common.assert_bound("PAT-1", require_created=True)
+			kiosk_common.assert_txn_bound("TXN-1", "PAT-1")
 
 	def test_clear_session(self):
 		kiosk_common.bind_patient("PAT-1", created=True)
@@ -350,6 +397,7 @@ class TestKioskRegister(KioskTestCase):
 		before = (patient_count(), frappe.db.count("Kiosk Token"))
 		for override in bad:
 			with self.subTest(override=override):
+				frappe.cache.delete_keys("kiosk:rate:")  # 15 bad submissions would otherwise hit the 10/min cap
 				self.assertRaises(frappe.ValidationError, kiosk.register_patient, **patient_args(**override))
 		self.assertEqual((patient_count(), frappe.db.count("Kiosk Token")), before)
 
@@ -468,9 +516,8 @@ class TestKioskRegister(KioskTestCase):
 	def test_rate_limited(self):
 		for i in range(10):
 			kiosk.register_patient(**patient_args(first_name=f"Rate{i}"))
-		with self.assertRaises(frappe.ValidationError):
+		with self.assertRaises(frappe.TooManyRequestsError):
 			kiosk.register_patient(**patient_args())
-		self.assertEqual(frappe.local.response.get("http_status_code"), 429)
 
 	def test_get_config(self):
 		config = kiosk.get_config()
@@ -635,6 +682,17 @@ class TestKioskAbha(KioskTestCase):
 		fn.assert_called_once_with(self.uhid, AADHAAR)
 		kiosk_common.assert_txn_bound("TXN-1", self.uhid)
 
+	def test_the_binding_survives_the_elevation(self):
+		# The real flow is send OTP, then verify in a later request: both must see the same device's binding.
+		with session_id("sid-A"):
+			uhid = kiosk.register_patient(**patient_args(first_name="Sidtest"))["uhid"]
+			with m1(enrol, "generate_aadhaar_otp", return_value={"txnId": "TXN-S"}):
+				kiosk_abha.send_aadhaar_otp(uhid, AADHAAR)
+			self.assertEqual(frappe.session.sid, "sid-A")
+			kiosk_common.assert_txn_bound("TXN-S", uhid)
+			with session_id("sid-B"):
+				self.assertRaises(frappe.PermissionError, kiosk_common.assert_txn_bound, "TXN-S", uhid)
+
 	def test_m1_runs_as_administrator_and_the_user_comes_back(self):
 		patcher = m1(enrol, "generate_aadhaar_otp", return_value={"txnId": "TXN-1"})
 		with patcher:
@@ -772,10 +830,9 @@ class TestKioskAbha(KioskTestCase):
 		with patch.object(enrol, "generate_aadhaar_otp", return_value={"txnId": "T"}) as fn:
 			for _ in range(3):
 				kiosk_abha.send_aadhaar_otp(self.uhid, AADHAAR)
-			with self.assertRaises(frappe.ValidationError):
+			with self.assertRaises(frappe.TooManyRequestsError):
 				kiosk_abha.send_aadhaar_otp(self.uhid, AADHAAR)
 			self.assertEqual(fn.call_count, 3)
-		self.assertEqual(frappe.local.response.get("http_status_code"), 429)
 
 	def test_a_stranger_cannot_use_up_a_patients_otp_allowance(self):
 		with session_id("device-2"), patch.object(enrol, "generate_aadhaar_otp") as fn:
