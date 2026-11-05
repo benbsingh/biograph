@@ -10,6 +10,7 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, nowdate
 
 import json
+import re
 
 from healthcare.api import kiosk, kiosk_abha, kiosk_common
 from healthcare.www import kiosk as kiosk_page
@@ -873,3 +874,29 @@ class TestKioskPage(KioskTestCase):
 		self.assertFalse(boot["camp_active"])
 		self.assertFalse(boot["enable_appointment"])
 		self.assertEqual(boot["camp"], camp.camp_name)
+
+
+class TestKioskAssets(IntegrationTestCase):
+	"""Static guards on the hand-written UI: it may only talk to the kiosk API and must not keep or inject patient data."""
+
+	def source(self, filename):
+		with open(frappe.get_app_path("healthcare", "public", "kiosk", filename)) as f:
+			return f.read()
+
+	def test_js_only_calls_the_kiosk_api(self):
+		js = self.source("kiosk.js")
+		for base in re.findall(r'"(/api/method/[^"]*)"', js):
+			self.assertRegex(base, r"^/api/method/healthcare\.api\.kiosk(_abha)?\.$")
+		self.assertNotIn("http://", js)
+		self.assertNotIn("https://", js)
+
+	def test_js_keeps_nothing_and_injects_no_html(self):
+		js = self.source("kiosk.js")
+		for forbidden in ("localStorage", "sessionStorage", "document.cookie", "innerHTML", "outerHTML", "insertAdjacentHTML", "eval(", "location.search", "location.hash"):
+			self.assertNotIn(forbidden, js)
+
+	def test_page_loads_only_its_own_static_files(self):
+		with open(frappe.get_app_path("healthcare", "www", "kiosk.html")) as f:
+			html = f.read()
+		self.assertEqual(len(re.findall(r"<script\b", html)), 2)  # boot JSON + kiosk.js
+		self.assertNotRegex(html, r"https?://")
