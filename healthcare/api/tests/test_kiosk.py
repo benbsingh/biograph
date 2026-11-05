@@ -853,6 +853,15 @@ class TestKioskPage(KioskTestCase):
 		self.assertFalse(boot["preview"])
 		self.assertTrue(boot["csrf_token"])
 
+	def test_template_renders_with_the_boot_json(self):
+		context = self.context()
+		with open(frappe.get_app_path("healthcare", "www", "kiosk.html")) as f:
+			html = frappe.render_template(f.read(), context)
+		self.assertIn('<script type="application/json" id="kiosk-boot">', html)
+		self.assertIn(context.boot_json, html)
+		self.assertIn(context.js_url, html)
+		self.assertIn("<title>Patient Registration</title>", html)
+
 	def test_boot_json_cannot_close_its_script_tag(self):
 		self.assertNotIn("</", kiosk_page._safe_json({"camp": "</script><script>alert(1)</script>"}))
 
