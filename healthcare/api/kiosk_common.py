@@ -11,7 +11,7 @@ import frappe
 from frappe import _
 from frappe.utils import getdate, nowdate
 
-from healthcare.kiosk_setup import KIOSK_ROLE
+from healthcare.kiosk_setup import KIOSK_ROLE, log_deferred
 from healthcare.regional.india.abdm.utils.http_guards import require_post
 
 # Slack on top of the idle timeout so a patient finishing at the last second keeps their session.
@@ -50,7 +50,7 @@ def refuse(title, detail, message):
 	defer_insert: the request ends in an exception, and Frappe rolls the transaction back, which would take an
 	Error Log row inserted here with it. A deferred log goes through Redis and survives.
 	"""
-	frappe.log_error(title=title, message=detail, defer_insert=True)
+	log_deferred(title, detail)
 	frappe.throw(message, frappe.ValidationError)
 
 

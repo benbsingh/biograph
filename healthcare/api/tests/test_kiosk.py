@@ -623,6 +623,36 @@ class TestKioskRegister(KioskTestCase):
 			kiosk._issue_token(patient, None)
 		self.assertFalse([m for m in frappe.local.message_log if "unique" in str(m).lower()])
 
+	def test_a_token_unique_violation_with_no_winner_is_answered_generically(self):
+		real_insert = frappe.model.document.Document.insert
+
+		def insert(doc, *args, **kwargs):
+			if doc.doctype == "Kiosk Token":
+				raise frappe.UniqueValidationError("Kiosk Token KT-20990101-0001 must be unique")
+			return real_insert(doc, *args, **kwargs)
+
+		with patch.object(frappe.model.document.Document, "insert", insert), patch.object(
+			frappe.db, "rollback"
+		), patch.object(frappe, "log_error"):
+			with self.assertRaises(frappe.ValidationError) as ctx:
+				kiosk.register_patient(**patient_args())
+		self.assertIn("ask for help", str(ctx.exception))
+		self.assertNotIn("unique", str(ctx.exception))
+		self.assertNotIn("KT-", str(ctx.exception))
+
+	def test_a_lost_token_race_binds_and_greets_the_winners_patient(self):
+		winner = kiosk.register_patient(**patient_args(mobile="9123456780", first_name="Winner"))
+		winner_token = frappe.get_doc("Kiosk Token", winner["token"])
+		with patch.object(kiosk, "_issue_token", return_value=winner_token), patch.object(
+			kiosk_common, "bind_patient"
+		) as bind:
+			result = kiosk.register_patient(**patient_args(mobile="9123456781", first_name="Loser"))
+		bind.assert_called_once_with(winner["uhid"], created=False)
+		self.assertTrue(result["already_registered"])
+		self.assertEqual(result["first_name"], "Winner")
+		self.assertNotIn("uhid", result)
+		self.assertEqual(result["token"], winner["token"])
+
 	def test_a_token_insert_failure_is_answered_generically(self):
 		real_insert = frappe.model.document.Document.insert
 
@@ -653,17 +683,78 @@ class TestKioskRegister(KioskTestCase):
 		self.assertNotIn("9876543210", str(log.call_args_list))
 		self.assertTrue(log.call_args_list)
 
-	def test_a_lost_lock_after_the_work_still_answers_busy(self):
-		# The patient is committed before the lock is released, so a retry finds them rather than a duplicate.
+	def test_a_lock_lost_at_release_does_not_undo_a_finished_registration(self):
+		# The patient and token are committed before the lock is released, so a release failure is only logged.
 		@contextlib.contextmanager
 		def lock_lost_at_release(*args, **kwargs):
 			yield
-			raise LockError("not owned")
+			raise LockError("not owned Asha 9876543210")
 
-		with patch.object(frappe.cache, "lock", side_effect=lock_lost_at_release):
+		with patch.object(frappe.cache, "lock", side_effect=lock_lost_at_release), patch.object(
+			frappe, "log_error"
+		) as log:
+			result = kiosk.register_patient(**patient_args())
+		self.assertTrue(result["token"])
+		self.assertTrue(log.call_args_list)
+		self.assertTrue(log.call_args_list[0].kwargs.get("defer_insert"))
+		self.assertNotIn("9876543210", str(log.call_args_list))
+		self.assertNotIn("Asha", str(log.call_args_list))
+
+	def test_a_lock_lost_at_release_does_not_mask_the_real_failure(self):
+		@contextlib.contextmanager
+		def lock_lost_at_release(*args, **kwargs):
+			try:
+				yield
+			finally:
+				raise LockError("not owned")  # noqa: B012
+
+		with patch.object(frappe.cache, "lock", side_effect=lock_lost_at_release), patch.object(frappe, "log_error"):
+			# inside the lock: _find_existing_patient is its first step
+			with patch.object(kiosk, "_find_existing_patient", side_effect=RuntimeError("Asha")):
+				with self.assertRaises(frappe.ValidationError) as ctx:
+					kiosk.register_patient(**patient_args())
+		self.assertIn("ask for help", str(ctx.exception))
+		self.assertNotIn("busy", str(ctx.exception))
+
+	def test_a_refusal_log_never_carries_the_request_arguments(self):
+		# frappe.log_error stores sanitized_dict(form_dict) in Error Log.metadata, and that only masks keys such
+		# as password/token/key, so dob, mobile, aadhaar and otp would be stored in clear text.
+		sensitive = {
+			"first_name": "Asha",
+			"dob": "1990-02-03",
+			"mobile": "9876543210",
+			"aadhaar": "123412341234",
+			"otp": "654321",
+		}
+		queued = []
+		saved_form_dict = frappe.local.form_dict
+		had_request = hasattr(frappe.local, "request")
+		saved_request = getattr(frappe.local, "request", None)
+		frappe.local.request = frappe._dict(method="POST", path="/api/method/kiosk", referrer="")
+		frappe.local.form_dict = frappe._dict(sensitive)
+		try:
+			with patch("frappe.deferred_insert.deferred_insert", side_effect=lambda **kw: queued.append(kw)):
+				with self.assertRaises(frappe.ValidationError):
+					kiosk_common.refuse("Kiosk request failed", "register_patient: RuntimeError", "Generic answer")
+			restored = dict(frappe.local.form_dict)
+		finally:
+			frappe.local.form_dict = saved_form_dict
+			if had_request:
+				frappe.local.request = saved_request
+			else:
+				del frappe.local.request
+		self.assertEqual(len(queued), 1)
+		record = str(queued[0])
+		self.assertIn("http_request", record)  # the metadata was gathered, just without the arguments
+		for value in sensitive.values():
+			self.assertNotIn(value, record)
+		self.assertEqual(restored, sensitive)  # the request's own form_dict is put back
+
+	def test_a_logging_failure_does_not_replace_the_generic_answer(self):
+		with patch.object(frappe, "log_error", side_effect=ConnectionError("redis down")):
 			with self.assertRaises(frappe.ValidationError) as ctx:
-				kiosk.register_patient(**patient_args())
-		self.assertIn("busy", str(ctx.exception))
+				kiosk_common.refuse("Kiosk request failed", "x", "Generic answer")
+		self.assertEqual(str(ctx.exception), "Generic answer")
 
 	def test_every_refusal_is_logged_deferred_so_the_rollback_keeps_it(self):
 		# The request ends in an exception, so Frappe rolls back; a non-deferred Error Log row would go too.
@@ -1186,7 +1277,7 @@ class TestKioskAssets(IntegrationTestCase):
 
 	def test_a_refused_step_tells_the_patient_to_start_again_not_that_the_kiosk_is_signed_out(self):
 		js = self.source("kiosk.js")
-		self.assertIn("Your session has ended. Please start again.", js)
+		self.assertIn("Your session has ended. Please start again, or ask for help at the desk if this keeps happening.", js)
 		self.assertRegex(js, r'status === 401\) return "This kiosk is not signed in')
 
 	def test_js_keeps_nothing_and_injects_no_html(self):

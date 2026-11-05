@@ -14,6 +14,24 @@ _PERM_TYPES = (
 )  # fmt: skip
 
 
+def log_deferred(title, detail):
+	"""Log to Error Log through Redis (it survives the request's rollback), without the request's arguments.
+
+	frappe.log_error also stores sanitized_dict(frappe.form_dict) in Error Log.metadata, and that only masks keys such
+	as password, token or key. A kiosk request's arguments (name, dob, mobile, aadhaar, otp, ABHA address) would be
+	stored in clear text, so the form_dict is swapped for an empty one for the duration of the call. Callers pass a
+	title and a class name, never patient data. A logging failure (Redis down) never replaces the caller's answer.
+	"""
+	saved = frappe.local.form_dict
+	frappe.local.form_dict = frappe._dict()
+	try:
+		frappe.log_error(title=title, message=detail, defer_insert=True)
+	except Exception:
+		pass
+	finally:
+		frappe.local.form_dict = saved
+
+
 def ensure_kiosk_role_and_permissions():
 	# Every migrate resets the Kiosk rows to create-only on purpose: this is a security boundary, so a loosened
 	# (or tightened) Custom DocPerm made by hand in Role Permission Manager does not survive.
@@ -27,7 +45,9 @@ def _ensure_one_token_per_patient_per_day():
 	"""Back the kiosk's registration lock with the database: a patient gets one token a day, however requests race."""
 	if frappe.db.table_exists("Kiosk Token"):
 		# A site that issued tokens before the index existed may hold two for one patient and day, and the ALTER
-		# would fail on them (and so would every migrate). Keep the lowest-named token of each pair.
+		# would fail on them (and so would every migrate). Keep the lowest-named token of each pair: names are
+		# KT-<date>-<sequence>, so the lowest is the first one issued, which is deliberate. The removed ones are
+		# counted in an Error Log entry (their rows also go to Deleted Document).
 		extras = frappe.db.sql(
 			"""select name from `tabKiosk Token` t where exists (
 				select 1 from `tabKiosk Token` o
@@ -37,7 +57,7 @@ def _ensure_one_token_per_patient_per_day():
 		for name in extras:
 			frappe.delete_doc("Kiosk Token", name, ignore_permissions=True, force=True)
 		if extras:
-			frappe.log_error(title="Kiosk Token duplicates removed", message=f"{len(extras)} duplicate token(s)", defer_insert=True)
+			log_deferred("Kiosk Token duplicates removed", f"{len(extras)} duplicate token(s)")
 		frappe.db.add_unique("Kiosk Token", ["patient", "token_date"], constraint_name="unique_kiosk_token_patient_day")
 
 

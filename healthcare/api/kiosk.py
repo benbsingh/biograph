@@ -8,6 +8,7 @@ Kiosk role is create-only and the Patient's own hooks touch doctypes it cannot r
 
 import contextlib
 import re
+import sys
 
 from redis.exceptions import LockError
 
@@ -16,6 +17,7 @@ from frappe import _
 from frappe.utils import add_years, getdate, nowdate, validate_email_address
 
 from healthcare.api import kiosk_common as common
+from healthcare.kiosk_setup import log_deferred
 
 _MOBILE_RE = re.compile(r"^[6-9]\d{9}$")
 _BAD_NAME_CHARS = re.compile(r"[<>{}\x00-\x1f]")
@@ -88,6 +90,11 @@ def register_patient(
 			already_registered = False
 
 		token = _issue_token(patient, camp)
+		if token.patient != patient.name:
+			# Lost a token race: the rollback took this request's new patient with it, and the winner's patient
+			# is the one the token belongs to. Greet and bind that one, as a returning patient.
+			patient = frappe.get_doc("Patient", token.patient)
+			already_registered = True
 		# Inside the lock: a double-tap's second request cannot overwrite the sticky "created" flag afterwards
 		common.bind_patient(patient.name, created=not already_registered)
 
@@ -114,16 +121,32 @@ def _locked_and_committed(lock_name):
 	The Redis lock only helps if the next holder can see this holder's rows, so the work is committed before
 	the lock is released, and a first commit on entry ends this request's old DB snapshot (MariaDB's
 	REPEATABLE READ would otherwise hide a row the previous holder committed a moment ago).
+
+	Only failing to get the lock says "busy". Once the work is committed, a lock that has expired or is no longer
+	owned at release is logged and nothing more: telling the patient to retry would undo a finished registration.
 	"""
 	try:
-		with frappe.cache.lock(lock_name, timeout=_LOCK_TIMEOUT, blocking_timeout=_LOCK_TIMEOUT):
-			frappe.db.commit()  # nothing is pending here; this only ends the old snapshot
-			yield
-			frappe.db.commit()
+		lock = frappe.cache.lock(lock_name, timeout=_LOCK_TIMEOUT, blocking_timeout=_LOCK_TIMEOUT)
+		lock.__enter__()
 	except LockError as e:
-		# Could not get the lock in time, or lost it while working (the work was committed first, so a retry
-		# finds the patient or appointment already made). Say "busy" rather than the generic error.
 		common.refuse("Kiosk lock failed", type(e).__name__, _("The kiosk is busy. Please try again in a moment."))
+
+	try:
+		frappe.db.commit()  # nothing is pending here; this only ends the old snapshot
+		yield
+		frappe.db.commit()
+	except BaseException:
+		_release(lock, *sys.exc_info())
+		raise  # the real failure, never replaced by a release problem
+	else:
+		_release(lock, None, None, None)
+
+
+def _release(lock, *exc_info):
+	try:
+		lock.__exit__(*exc_info)
+	except LockError as e:
+		log_deferred("Kiosk lock lost", type(e).__name__)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -374,7 +397,9 @@ def _issue_token(patient, camp):
 		frappe.clear_messages()  # the failed insert queued a "must be unique" message for the screen
 		winner = _todays_token(patient.name, today)
 		if not winner:
-			raise
+			common.refuse(
+				"Kiosk token refused", "unique violation, no winner", _("We could not issue your token. Please ask for help at the desk.")
+			)
 		return winner
 	except frappe.ValidationError as e:
 		common.refuse("Kiosk token refused", type(e).__name__, _("We could not issue your token. Please ask for help at the desk."))

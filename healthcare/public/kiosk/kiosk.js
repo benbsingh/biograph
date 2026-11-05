@@ -93,9 +93,9 @@
 	function serverMessage(body, status) {
 		if (status === 429) return "Too many requests. Please wait a minute and try again.";
 		if (status === 401) return "This kiosk is not signed in. Please ask for help at the desk.";
-		// The page only loads for a signed-in Kiosk user, so a 403 is the server refusing a step: usually this
-		// session's registration has expired. Starting over is the fix, not a desk visit.
-		if (status === 403) return "Your session has ended. Please start again.";
+		// A 403 is usually this session's registration expiring (start over), but it is also what a kiosk login
+		// that has expired or lost its role gets, which starting over does not fix, so the desk is named too.
+		if (status === 403) return "Your session has ended. Please start again, or ask for help at the desk if this keeps happening.";
 		try {
 			var messages = JSON.parse(body._server_messages || "[]");
 			if (messages.length) {
