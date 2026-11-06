@@ -56,6 +56,7 @@ class PatientAppointment(Document):
 		# Skip all patient-related validations for unavailability appointments
 		if not self.is_unavailability:
 			self.validate_based_on_appointments_for()
+			self.validate_medical_camp()
 			self.validate_customer_created()
 			self.validate_practitioner_unavailability()
 		else:
@@ -432,6 +433,11 @@ class PatientAppointment(Document):
 		if self.is_unavailability:
 			# For unavailability appointments, use patient_name as title
 			self.title = self.patient_name or "UNAVAILABLE"
+		elif self.appointment_for == "Medical Camp" and self.medical_camp:
+			self.title = _("{0} at {1}").format(
+				self.patient_name or self.patient,
+				frappe.db.get_value("Medical Camp", self.medical_camp, "camp_name") or self.medical_camp,
+			)
 		elif self.practitioner:
 			self.title = _("{0} with {1}").format(
 				self.patient_name or self.patient, self.practitioner_name or self.practitioner
@@ -748,6 +754,40 @@ class PatientAppointment(Document):
 			if not self.appointment_based_on_check_in:
 				self.appointment_based_on_check_in = True
 
+	def validate_medical_camp(self):
+		if self.appointment_for != "Medical Camp":
+			return
+
+		camp = frappe.db.get_value(
+			"Medical Camp",
+			self.medical_camp,
+			["camp_name", "status", "start_date", "end_date", "appointment_type"],
+			as_dict=True,
+		)
+		if not camp:
+			return
+
+		if camp.status in ("Completed", "Cancelled"):
+			frappe.throw(
+				_("Cannot book an appointment for Medical Camp {0} as it is {1}").format(
+					frappe.bold(camp.camp_name), frappe.bold(camp.status)
+				)
+			)
+
+		if not (getdate(camp.start_date) <= getdate(self.appointment_date) <= getdate(camp.end_date)):
+			frappe.throw(
+				_("Appointment Date must be between {0} and {1}, the dates of Medical Camp {2}").format(
+					format_date(camp.start_date), format_date(camp.end_date), frappe.bold(camp.camp_name)
+				)
+			)
+
+		if camp.appointment_type and camp.appointment_type != self.appointment_type:
+			frappe.throw(
+				_("Medical Camp {0} requires Appointment Type {1}").format(
+					frappe.bold(camp.camp_name), frappe.bold(camp.appointment_type)
+				)
+			)
+
 	def validate_service_unit(self):
 		if self.inpatient_record and self.service_unit:
 			from healthcare.healthcare.doctype.inpatient_medication_entry.inpatient_medication_entry import (
@@ -879,6 +919,8 @@ class PatientAppointment(Document):
 				query = query.where(appointment.service_unit == self.service_unit)
 			if self.department:
 				query = query.where(appointment.department == self.department)
+			if self.medical_camp:
+				query = query.where(appointment.medical_camp == self.medical_camp)
 
 		position = query.run(as_dict=True)
 		max_position = position[0]["max_position"] if position and position[0].get("max_position") else 0

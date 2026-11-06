@@ -17,6 +17,7 @@
   "practitioner",
   "practitioner_name",
   "department",
+  "medical_camp",
   "service_unit",
   "appointment_date",
   "section_patient_details",
@@ -453,7 +454,7 @@
    "fieldname": "appointment_for",
    "fieldtype": "Select",
    "label": "Appointment For",
-   "options": "\nPractitioner\nDepartment\nService Unit",
+   "options": "\nPractitioner\nDepartment\nService Unit\nMedical Camp",
    "read_only": 1,
    "reqd": 1,
    "set_only_once": 1
@@ -502,6 +503,19 @@
    "label": "Reference Docname",
    "options": "reference_doctype",
    "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.appointment_for==\"Medical Camp\"",
+   "fieldname": "medical_camp",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Medical Camp",
+   "mandatory_depends_on": "eval:doc.appointment_for==\"Medical Camp\"",
+   "options": "Medical Camp",
+   "read_only_depends_on": "eval:doc.appointment_for!=\"Medical Camp\"",
+   "search_index": 1,
+   "set_only_once": 1
   }
  ],
  "grid_page_length": 50,

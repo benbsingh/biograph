@@ -23,6 +23,8 @@
   "image",
   "column_break_14",
   "status",
+  "patient_source",
+  "medical_camp",
   "uid",
   "inpatient_record",
   "inpatient_status",
@@ -535,6 +537,25 @@
    "fieldname": "family_history",
    "fieldtype": "Small Text",
    "label": "Family History (Legacy)"
+  },
+  {
+   "allow_in_quick_entry": 1,
+   "description": "The Medical Camp this patient was registered through",
+   "fieldname": "medical_camp",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Camp",
+   "options": "Medical Camp",
+   "depends_on": "eval:doc.patient_source==\"Medical Camp\"",
+   "mandatory_depends_on": "eval:doc.patient_source==\"Medical Camp\""
+  },
+  {
+   "allow_in_quick_entry": 1,
+   "fieldname": "patient_source",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "Patient Source",
+   "options": "\nWalk-in\nReferral\nMedical Camp\nOther"
   }
  ],
  "grid_page_length": 50,

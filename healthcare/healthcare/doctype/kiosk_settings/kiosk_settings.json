@@ -1,0 +1,115 @@
+{
+ "actions": [],
+ "creation": "2026-11-05 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "section_registration",
+  "patient_source",
+  "medical_camp",
+  "column_break_1",
+  "idle_timeout",
+  "section_features",
+  "enable_appointment",
+  "column_break_2",
+  "enable_abha"
+ ],
+ "fields": [
+  {
+   "default": "0",
+   "description": "When off, the /kiosk page and its API reject all requests. Create a dedicated user holding only the Kiosk role for the shared device.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "section_registration",
+   "fieldtype": "Section Break",
+   "label": "Registration"
+  },
+  {
+   "default": "Walk-in",
+   "description": "Stamped on every patient registered at this kiosk; the device cannot override it",
+   "fieldname": "patient_source",
+   "fieldtype": "Select",
+   "label": "Patient Source",
+   "options": "Walk-in\nReferral\nMedical Camp\nOther",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.patient_source==\"Medical Camp\"",
+   "fieldname": "medical_camp",
+   "fieldtype": "Link",
+   "label": "Camp",
+   "mandatory_depends_on": "eval:doc.patient_source==\"Medical Camp\"",
+   "options": "Medical Camp"
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "60",
+   "description": "Seconds without a touch before the screen resets for the next patient (15 to 600)",
+   "fieldname": "idle_timeout",
+   "fieldtype": "Int",
+   "label": "Idle Timeout (seconds)"
+  },
+  {
+   "fieldname": "section_features",
+   "fieldtype": "Section Break",
+   "label": "Features"
+  },
+  {
+   "default": "0",
+   "description": "Needs a Medical Camp as the patient source",
+   "fieldname": "enable_appointment",
+   "fieldtype": "Check",
+   "label": "Allow Appointment Booking"
+  },
+  {
+   "fieldname": "column_break_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "enable_abha",
+   "fieldtype": "Check",
+   "label": "Allow ABHA Creation and Linking"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-11-05 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Healthcare",
+ "name": "Kiosk Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Healthcare Administrator",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

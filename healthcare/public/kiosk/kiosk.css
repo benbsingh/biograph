@@ -1,0 +1,291 @@
+/* Patient registration kiosk. Big touch targets, high contrast, readable from an arm's length. */
+
+:root {
+	--bg: #eef2f6;
+	--surface: #ffffff;
+	--text: #14202b;
+	--muted: #51606e;
+	--primary: #0b5cad;
+	--primary-text: #ffffff;
+	--secondary-bg: #e3ebf3;
+	--border: #b6c3d0;
+	--error-bg: #fdecec;
+	--error: #a3201d;
+	--notice-bg: #e7f4ea;
+	--notice: #1d6b34;
+	--radius: 14px;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--bg: #0f1720;
+		--surface: #18222d;
+		--text: #f1f5f9;
+		--muted: #a5b3c1;
+		--primary: #5aa7f0;
+		--primary-text: #08131f;
+		--secondary-bg: #263544;
+		--border: #3b4c5d;
+		--error-bg: #3a1c1c;
+		--error: #ff9d99;
+		--notice-bg: #17301f;
+		--notice: #8fe0a6;
+	}
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html {
+	font-size: 20px;
+}
+
+body {
+	margin: 0;
+	min-height: 100vh;
+	background: var(--bg);
+	color: var(--text);
+	font-family:
+		system-ui,
+		-apple-system,
+		"Segoe UI",
+		Roboto,
+		sans-serif;
+	line-height: 1.4;
+	-webkit-tap-highlight-color: transparent;
+	touch-action: manipulation;
+	user-select: none;
+}
+
+input {
+	user-select: text;
+}
+
+#kiosk-root {
+	max-width: 46rem;
+	margin: 0 auto;
+	padding: 16px;
+}
+
+.banner {
+	margin: 0 0 12px;
+	padding: 10px 14px;
+	border-radius: var(--radius);
+	background: var(--notice-bg);
+	color: var(--notice);
+	font-size: 0.8rem;
+}
+
+.card {
+	background: var(--surface);
+	border-radius: var(--radius);
+	padding: 28px 24px;
+	box-shadow: 0 2px 14px rgba(0, 0, 0, 0.1);
+}
+
+.screen {
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+}
+
+h1 {
+	margin: 0;
+	font-size: 1.7rem;
+	line-height: 1.2;
+}
+
+.lead {
+	margin: 0;
+	font-size: 1.1rem;
+	color: var(--muted);
+}
+
+.hint {
+	margin: 0;
+	font-size: 0.8rem;
+	color: var(--muted);
+}
+
+.field {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+
+.field label,
+.field legend {
+	font-size: 0.9rem;
+	font-weight: 600;
+	padding: 0;
+}
+
+.field input {
+	min-height: 56px;
+	padding: 10px 14px;
+	font: inherit;
+	color: var(--text);
+	background: var(--surface);
+	border: 2px solid var(--border);
+	border-radius: 10px;
+}
+
+.field input:focus-visible,
+.btn:focus-visible,
+.choice input:focus-visible + span {
+	outline: 4px solid var(--primary);
+	outline-offset: 2px;
+}
+
+.choices {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px;
+}
+
+.choice {
+	flex: 1 1 8rem;
+	display: block;
+	cursor: pointer;
+}
+
+.choice input {
+	position: absolute;
+	opacity: 0;
+	min-height: 0;
+}
+
+.choice span {
+	display: block;
+	min-height: 56px;
+	padding: 14px;
+	text-align: center;
+	border: 2px solid var(--border);
+	border-radius: 10px;
+	font-weight: 600;
+}
+
+.choice input:checked + span {
+	background: var(--primary);
+	border-color: var(--primary);
+	color: var(--primary-text);
+}
+
+.actions {
+	display: flex;
+	gap: 12px;
+	margin-top: 8px;
+}
+
+.actions.stack {
+	flex-direction: column;
+}
+
+.btn {
+	flex: 1;
+	min-height: 64px;
+	padding: 14px 20px;
+	font: inherit;
+	font-size: 1.05rem;
+	font-weight: 700;
+	border: 0;
+	border-radius: 12px;
+	cursor: pointer;
+}
+
+.btn.primary {
+	background: var(--primary);
+	color: var(--primary-text);
+}
+
+.btn.secondary {
+	background: var(--secondary-bg);
+	color: var(--text);
+}
+
+.btn:active {
+	transform: scale(0.98);
+}
+
+.token-label {
+	margin: 0;
+	text-align: center;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	color: var(--muted);
+	font-size: 0.8rem;
+}
+
+.token {
+	margin: 0;
+	text-align: center;
+	font-size: 5rem;
+	font-weight: 800;
+	line-height: 1;
+	color: var(--primary);
+}
+
+.facts {
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	gap: 6px 18px;
+	margin: 0;
+}
+
+.facts dt {
+	color: var(--muted);
+}
+
+.facts dd {
+	margin: 0;
+	font-weight: 600;
+	word-break: break-word;
+}
+
+.error,
+.notice,
+.busy {
+	margin: 16px 0 0;
+	padding: 12px 14px;
+	border-radius: 10px;
+	font-weight: 600;
+}
+
+.error {
+	background: var(--error-bg);
+	color: var(--error);
+}
+
+.notice {
+	margin: 0;
+	background: var(--notice-bg);
+	color: var(--notice);
+}
+
+.busy {
+	background: var(--secondary-bg);
+}
+
+.print-frame {
+	position: fixed;
+	width: 0;
+	height: 0;
+	border: 0;
+	visibility: hidden;
+}
+
+@media (max-width: 520px) {
+	.actions {
+		flex-direction: column-reverse;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.btn:active {
+		transform: none;
+	}
+}

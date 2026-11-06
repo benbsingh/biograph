@@ -32,6 +32,7 @@ class Patient(Document):
 
 	def validate(self):
 		self.set_full_name()
+		self.validate_patient_source()
 		self.flags.is_new_doc = self.is_new()
 		self.flags.existing_customer = self.is_new() and bool(self.customer)
 		
@@ -54,6 +55,13 @@ class Patient(Document):
 					"message": result["message"] or "Possible duplicate patient record(s) found",
 					"matches": result["matches"]
 				}
+
+	def validate_patient_source(self):
+		if self.patient_source == "Medical Camp":
+			if not self.medical_camp:
+				frappe.throw(_("Please select the Camp for Patient Source Medical Camp"), frappe.MandatoryError)
+		else:
+			self.medical_camp = None
 
 	def before_insert(self):
 		self.set_missing_customer_details()
