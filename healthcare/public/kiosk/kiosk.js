@@ -198,7 +198,7 @@
 						"p",
 						{ class: "banner" },
 						"Preview: sign in as the Kiosk user to register patients.",
-					)
+				  )
 				: null,
 			h("section", { class: "card" }, [
 				content,
@@ -360,7 +360,7 @@
 							h("dd", {}, p.uhid),
 							h("dt", {}, "Mobile"),
 							h("dd", {}, p.masked_mobile),
-						],
+					  ],
 			),
 			S.notice ? h("p", { class: "notice" }, S.notice) : null,
 			h("div", { class: "actions stack" }, actions),
@@ -538,7 +538,7 @@
 						inputmode: "numeric",
 						value: S.mobile,
 						required: true,
-					})
+				  })
 				: null,
 			mobileStage
 				? h("p", { class: "hint" }, "This OTP was sent to your mobile number.")
@@ -650,12 +650,12 @@
 								"secondary",
 							);
 						}),
-					)
+				  )
 				: h(
 						"p",
 						{ class: "lead" },
 						"No suggestions are available. You can set your address later at the desk.",
-					),
+				  ),
 			button(
 				"Skip for now",
 				function () {
