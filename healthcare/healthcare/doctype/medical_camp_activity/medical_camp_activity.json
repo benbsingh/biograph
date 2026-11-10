@@ -1,0 +1,68 @@
+{
+	"actions": [],
+	"autoname": "hash",
+	"doctype": "DocType",
+	"editable_grid": 1,
+	"engine": "InnoDB",
+	"field_order": [
+		"activity",
+		"department",
+		"responsible_practitioner",
+		"start_time",
+		"end_time",
+		"status",
+		"notes"
+	],
+	"fields": [
+		{
+			"fieldname": "activity",
+			"fieldtype": "Data",
+			"in_list_view": 1,
+			"label": "Activity"
+		},
+		{
+			"fieldname": "department",
+			"fieldtype": "Link",
+			"label": "Department",
+			"options": "Medical Department"
+		},
+		{
+			"fieldname": "responsible_practitioner",
+			"fieldtype": "Link",
+			"label": "Responsible Practitioner",
+			"options": "Healthcare Practitioner"
+		},
+		{
+			"fieldname": "start_time",
+			"fieldtype": "Time",
+			"label": "Start Time"
+		},
+		{
+			"fieldname": "end_time",
+			"fieldtype": "Time",
+			"label": "End Time"
+		},
+		{
+			"default": "Planned",
+			"fieldname": "status",
+			"fieldtype": "Select",
+			"in_list_view": 1,
+			"label": "Status",
+			"options": "Planned\nIn Progress\nCompleted\nCancelled"
+		},
+		{
+			"fieldname": "notes",
+			"fieldtype": "Small Text",
+			"label": "Notes"
+		}
+	],
+	"grid_page_length": 50,
+	"istable": 1,
+	"links": [],
+	"module": "Healthcare",
+	"name": "Medical Camp Activity",
+	"permissions": [],
+	"quick_entry": 1,
+	"sort_field": "modified",
+	"sort_order": "DESC"
+}

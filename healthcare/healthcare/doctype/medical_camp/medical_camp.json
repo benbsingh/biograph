@@ -1,0 +1,152 @@
+{
+	"actions": [],
+	"autoname": "naming_series:",
+	"doctype": "DocType",
+	"editable_grid": 1,
+	"engine": "InnoDB",
+	"field_order": [
+		"naming_series",
+		"camp_type",
+		"status",
+		"start_date",
+		"end_date",
+		"start_time",
+		"end_time",
+		"location",
+		"organizer",
+		"contact_person",
+		"contact_phone",
+		"contact_email",
+		"team_members",
+		"goals",
+		"general_notes",
+		"outcome_summary",
+		"participants",
+		"activities"
+	],
+	"fields": [
+		{
+			"fieldname": "naming_series",
+			"fieldtype": "Select",
+			"label": "Series",
+			"no_copy": 1,
+			"options": "MC-.YYYY.-.#####",
+			"reqd": 1,
+			"set_only_once": 1
+		},
+		{
+			"fieldname": "camp_type",
+			"fieldtype": "Select",
+			"in_list_view": 1,
+			"label": "Camp Type",
+			"options": "General\nHealth Screening\nImmunization\nHealth Education\nOther"
+		},
+		{
+			"default": "Planned",
+			"fieldname": "status",
+			"fieldtype": "Select",
+			"in_list_view": 1,
+			"label": "Status",
+			"options": "Planned\nIn Progress\nCompleted\nCancelled"
+		},
+		{
+			"fieldname": "start_date",
+			"fieldtype": "Date",
+			"label": "Start Date"
+		},
+		{
+			"fieldname": "end_date",
+			"fieldtype": "Date",
+			"label": "End Date"
+		},
+		{
+			"fieldname": "start_time",
+			"fieldtype": "Time",
+			"label": "Start Time"
+		},
+		{
+			"fieldname": "end_time",
+			"fieldtype": "Time",
+			"label": "End Time"
+		},
+		{
+			"fieldname": "location",
+			"fieldtype": "Data",
+			"label": "Location"
+		},
+		{
+			"fieldname": "organizer",
+			"fieldtype": "Link",
+			"label": "Organizer",
+			"options": "Healthcare Practitioner"
+		},
+		{
+			"fieldname": "contact_person",
+			"fieldtype": "Data",
+			"label": "Contact Person"
+		},
+		{
+			"fieldname": "contact_phone",
+			"fieldtype": "Data",
+			"label": "Contact Phone"
+		},
+		{
+			"fieldname": "contact_email",
+			"fieldtype": "Data",
+			"label": "Contact Email"
+		},
+		{
+			"fieldname": "team_members",
+			"fieldtype": "Small Text",
+			"label": "Team Members"
+		},
+		{
+			"fieldname": "goals",
+			"fieldtype": "Small Text",
+			"label": "Goals"
+		},
+		{
+			"fieldname": "general_notes",
+			"fieldtype": "Small Text",
+			"label": "General Notes"
+		},
+		{
+			"fieldname": "outcome_summary",
+			"fieldtype": "Small Text",
+			"label": "Outcome Summary"
+		},
+		{
+			"fieldname": "participants",
+			"fieldtype": "Table",
+			"label": "Participants",
+			"options": "Medical Camp Participant"
+		},
+		{
+			"fieldname": "activities",
+			"fieldtype": "Table",
+			"label": "Activities",
+			"options": "Medical Camp Activity"
+		}
+	],
+	"links": [],
+	"module": "Healthcare",
+	"name": "Medical Camp",
+	"permissions": [
+		{
+			"create": 1,
+			"delete": 1,
+			"email": 1,
+			"export": 1,
+			"print": 1,
+			"read": 1,
+			"report": 1,
+			"role": "Physician",
+			"share": 1,
+			"write": 1
+		}
+	],
+	"quick_entry": 1,
+	"sort_field": "modified",
+	"sort_order": "DESC",
+	"track_changes": 1
+}
