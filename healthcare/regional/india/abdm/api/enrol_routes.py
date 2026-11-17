@@ -270,7 +270,16 @@ def get_for_review(name: str) -> dict:
 @require_post
 def decide(name: str, decision: str, note: str = "") -> dict:
 	"""Approve (and send to ABDM) or reject. Held photographs and details are deleted either way."""
-	doc = _review_guard(name)
+	_require_approver()
+	if not name or not frappe.db.exists(DOCTYPE, name):
+		frappe.throw(frappe._("Enrolment record not found"), frappe.ValidationError)
+
+	doc = frappe.get_doc(DOCTYPE, name)
+	if doc.status != "Awaiting approval":
+		frappe.throw(frappe._("This enrolment has already been decided."), frappe.ValidationError)
+	if doc.requested_by == frappe.session.user:
+		frappe.throw(frappe._("A second person must approve: the person who collected the documents cannot decide."), frappe.PermissionError)
+
 	decision = (decision or "").strip().lower()
 	if decision not in ("approve", "reject"):
 		frappe.throw(frappe._("The decision must be approve or reject."), frappe.ValidationError)
@@ -279,9 +288,21 @@ def decide(name: str, decision: str, note: str = "") -> dict:
 		frappe.throw(frappe._("Say why the documents are rejected."), frappe.ValidationError)
 
 	base = {"decided_by": frappe.session.user, "decided_at": now_datetime(), "decision_note": note}
+	claim_status = "Rejected" if decision == "reject" else "Approved"
+
+	# Claim the record atomically before the external ABDM call so concurrent approvers cannot both act.
+	frappe.db.sql(
+		"""
+		update `tabABHA Document Enrolment`
+		set status = %(status)s, decided_by = %(decided_by)s, decided_at = %(decided_at)s, decision_note = %(decision_note)s
+		where name = %(name)s and status = 'Awaiting approval'
+		""",
+		{**base, "status": claim_status, "name": name},
+	)
+	if not frappe.db.sql("select row_count()")[0][0]:
+		frappe.throw(frappe._("This enrolment has already been decided."), frappe.ValidationError)
 
 	if decision == "reject":
-		frappe.db.set_value(DOCTYPE, name, {**base, "status": "Rejected"})
 		_discard_held(name)
 		frappe.db.commit()
 		return {"name": name, "status": "Rejected"}
@@ -290,6 +311,8 @@ def decide(name: str, decision: str, note: str = "") -> dict:
 	txn_id = get_decrypted_password(DOCTYPE, name, "txn_id", raise_exception=False) or ""
 	front, back = (_photo_b64(doc, f) for f in ("front_photo", "back_photo"))
 	if not (front and back and details):
+		frappe.db.set_value(DOCTYPE, name, {"status": "Failed", "result_message": "The held documents are missing. Collect them again."})
+		frappe.db.commit()
 		frappe.throw(frappe._("The held documents are missing. Collect them again."), frappe.ValidationError)
 	check_txn_not_consumed(txn_id)
 
@@ -299,7 +322,7 @@ def decide(name: str, decision: str, note: str = "") -> dict:
 		# ABDM refused (or the OTP session lapsed): record why, drop the held material, and let the collector start again.
 		message = re.sub(r"<[^>]+>", " ", str(e)).strip() or "ABDM refused the request."
 		frappe.clear_messages()
-		frappe.db.set_value(DOCTYPE, name, {**base, "status": "Failed", "result_message": message[:300]})
+		frappe.db.set_value(DOCTYPE, name, {"status": "Failed", "result_message": message[:300]})
 		_discard_held(name)
 		frappe.db.commit()
 		frappe.throw(frappe._("ABDM did not accept the documents: {0}").format(message), frappe.ValidationError)
@@ -310,7 +333,6 @@ def decide(name: str, decision: str, note: str = "") -> dict:
 		DOCTYPE,
 		name,
 		{
-			**base,
 			"status": "Submitted",
 			"enrolment_number": profile.get("enrolmentNumber") or "",
 			"enrolment_state": profile.get("enrolmentState") or "",
