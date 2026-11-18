@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <link rel="icon" href="/favicon.png" />
+    <title>{{ title }}</title>
+    <link rel="stylesheet" href="{{ css_url }}" />
+  </head>
+  <body>
+    <main id="kiosk-root" aria-live="polite"></main>
+    <script type="application/json" id="kiosk-boot">{{ boot_json | safe }}</script>
+    <script src="{{ js_url }}" defer></script>
+  </body>
+</html>

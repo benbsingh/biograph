@@ -1,6 +1,5 @@
 // Copyright (c) 2016, ESS LLP and contributors
 // For license information, please see license.txt
-{% include 'healthcare/regional/india/abdm/js/patient.js' %}
 
 frappe.ui.form.on('Patient', {
 	refresh: function (frm) {
@@ -12,6 +11,7 @@ frappe.ui.form.on('Patient', {
 			};
 		});
 		frm.set_query('customer_group', {'is_group': 0});
+		frm.set_query('medical_camp', {'status': ['!=', 'Cancelled']});
 		frm.set_query('default_price_list', { 'selling': 1});
 
 		if (frappe.defaults.get_default('patient_name_by') != 'Naming Series') {

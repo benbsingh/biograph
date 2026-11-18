@@ -75,7 +75,7 @@
    "fieldname": "allow_booking_for",
    "fieldtype": "Select",
    "label": "Allow Booking For",
-   "options": "Practitioner\nDepartment\nService Unit",
+   "options": "Practitioner\nDepartment\nService Unit\nMedical Camp",
    "reqd": 1
   },
   {

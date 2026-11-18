@@ -145,3 +145,7 @@ def execute_migrate():
     create_custom_fields(custom_fields)
 
     print("Custom fields for Healthcare Insurance and Referral Practitioner Integration created successfully") 
+
+    from healthcare.kiosk_setup import ensure_kiosk_role_and_permissions
+
+    ensure_kiosk_role_and_permissions()
