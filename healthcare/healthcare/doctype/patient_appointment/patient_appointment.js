@@ -53,6 +53,12 @@ frappe.ui.form.on('Patient Appointment', {
 			}
 		});
 
+		frm.set_query('medical_camp', function() {
+			return {
+				filters: { 'status': ['in', ['Planned', 'Ongoing']] }
+			};
+		});
+
 		frm.set_query('service_unit', function() {
 			return {
 				query: 'healthcare.controllers.queries.get_healthcare_service_units',
@@ -209,7 +215,9 @@ frappe.ui.form.on('Patient Appointment', {
 					"healthcare.healthcare.doctype.fee_validity.fee_validity.get_fee_validity",
 					{ "appointment_name": frm.doc.name, "date": frm.doc.appointment_date , "ignore_status": true })).message;
 
-				if (val && !fee_validity.length) {
+				// A free camp appointment has nothing to pay
+				const free_camp = frm.doc.appointment_for == "Medical Camp" && !frm.doc.paid_amount;
+				if (val && !fee_validity.length && !free_camp) {
 					frm.add_custom_button(__("Make Payment"), function () {
 						make_payment(frm, val);
 					});
@@ -236,6 +244,14 @@ frappe.ui.form.on('Patient Appointment', {
 			frm.set_value({
 				'practitioner': '',
 				'practitioner_name': '',
+				'service_unit': '',
+			});
+			frm.trigger('set_book_action');
+		} else if (frm.doc.appointment_for == 'Medical Camp') {
+			frm.set_value({
+				'practitioner': '',
+				'practitioner_name': '',
+				'department': '',
 				'service_unit': '',
 			});
 			frm.trigger('set_book_action');
@@ -339,6 +355,19 @@ frappe.ui.form.on('Patient Appointment', {
 		if (frm.doc.department && frm.doc.appointment_for == 'Department') {
 			frm.events.set_payment_details(frm);
 			frm.set_value("appointment_based_on_check_in", 1);
+		}
+	},
+
+	medical_camp: function(frm) {
+		if (frm.doc.medical_camp && frm.doc.appointment_for == 'Medical Camp') {
+			frm.set_value("appointment_based_on_check_in", 1);
+			frappe.db.get_value("Medical Camp", frm.doc.medical_camp, ["start_date", "end_date", "company"]).then(r => {
+				const camp = r.message;
+				if (!camp) return;
+				const today = frappe.datetime.get_today();
+				frm.set_value("appointment_date", today < camp.start_date ? camp.start_date : (today > camp.end_date ? camp.end_date : today));
+				if (!frm.doc.company) frm.set_value("company", camp.company);
+			});
 		}
 	},
 
@@ -449,6 +478,11 @@ frappe.ui.form.on('Patient Appointment', {
 					frm.toggle_display('billing_item', data.message ? 1 : 0);
 					frm.toggle_reqd('paid_amount', data.message ? 1 : 0);
 					frm.toggle_reqd('billing_item', data.message ? 1 : 0);
+				}
+				if (frm.doc.appointment_for == 'Medical Camp') {
+					// camps are mostly free: a zero amount and no billing item are allowed
+					frm.toggle_reqd('paid_amount', 0);
+					frm.toggle_reqd('billing_item', 0);
 				}
 			}
 		});
@@ -1501,6 +1535,9 @@ let calculate_age = function(birth) {
 };
 
 let make_payment = function (frm, automate_invoicing) {
+	if (frm.doc.appointment_for == "Medical Camp" && !frm.doc.paid_amount) {
+		return; // a free camp appointment is not invoiced
+	}
 	if (automate_invoicing) {
 		make_registration (frm, automate_invoicing);
 	}

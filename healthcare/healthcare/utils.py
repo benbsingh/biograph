@@ -680,10 +680,19 @@ def get_appointment_billing_item_and_rate(doc):
 
 	if not service_item and doc.get("appointment_type"):
 		service_item, appointment_charge = get_appointment_type_billing_details(
-			doc.appointment_type, department if department else service_unit, is_inpatient
+			doc.appointment_type,
+			department if department else service_unit,
+			is_inpatient,
+			# A camp appointment has no department, service unit or practitioner: it is billed at the
+			# appointment type's generic charge
+			allow_generic=doc.get("appointment_for") == "Medical Camp",
 		)
 		if not practitioner_charge:
 			practitioner_charge = appointment_charge
+
+	if doc.get("appointment_for") == "Medical Camp" and not practitioner_charge:
+		# Camps are mostly free: no charge set on the appointment type means no charge, not a missing configuration
+		return {"service_item": service_item, "practitioner_charge": 0}
 
 	if not service_item:
 		service_item = get_healthcare_service_item(is_inpatient)
@@ -704,10 +713,10 @@ def get_appointment_billing_item_and_rate(doc):
 	return {"service_item": service_item, "practitioner_charge": practitioner_charge}
 
 
-def get_appointment_type_billing_details(appointment_type, dep_su, is_inpatient):
+def get_appointment_type_billing_details(appointment_type, dep_su, is_inpatient, allow_generic=False):
 	from healthcare.healthcare.doctype.appointment_type.appointment_type import get_billing_details
 
-	if not dep_su:
+	if not dep_su and not allow_generic:
 		return None, None
 
 	item_list = get_billing_details(appointment_type, dep_su)
