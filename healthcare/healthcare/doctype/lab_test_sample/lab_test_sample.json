@@ -66,7 +66,7 @@
    "read": 1,
    "report": 1,
    "role": "Healthcare Administrator",
-   "share": 1,
+   "share": 0,
    "write": 1
   },
   {
@@ -76,7 +76,7 @@
    "read": 1,
    "report": 1,
    "role": "Laboratory User",
-   "share": 1
+   "share": 0
   },
   {
    "create": 1,

@@ -410,6 +410,35 @@ class TestLabPermissionMatrix(IntegrationTestCase):
 		)
 		self.assertEqual(drafts_after - drafts_before, 1)
 
+	def test_docshare_does_not_bypass_lab_observation_matrix(self):
+		"""A DocShare write, submit or share right does not let a refused role act on a lab Observation.
+
+		Physician holds no write on lab Observation (D-2) and Laboratory User holds no submit or
+		share (R-OB). Each is shared the right, then refused by the matrix. Refused means the
+		action raises PermissionError or the check returns False.
+		"""
+		name = _make_observation(
+			self.fixtures["Patient"],
+			frappe.db.get_value("Observation", self.fixtures["Observation"], "observation_template"),
+			frappe.get_all("Company", pluck="name", limit=1)[0],
+			"Laboratory",
+		)
+		frappe.share.add("Observation", name, self.emails["PH"], read=1, write=1)
+		frappe.share.add("Observation", name, self.emails["LU"], read=1, submit=1, share=1)
+
+		self._run_as("PH")
+		with self.assertRaises(frappe.PermissionError):
+			doc = frappe.get_doc("Observation", name)
+			doc.result_text = "Shared write attempt"
+			doc.save()
+
+		self._run_as("LU")
+		with self.assertRaises(frappe.PermissionError):
+			frappe.get_doc("Observation", name).submit()
+		self.assertEqual(frappe.db.get_value("Observation", name, "docstatus"), 0)
+		with self.assertRaises(frappe.PermissionError):
+			frappe.get_doc("Observation", name).check_permission("share")
+
 	def test_lab_manager_role_exists(self):
 		"""Phase 1: the Lab Manager role exists after migrate (Q-1 = A)."""
 		self.assertTrue(frappe.db.exists("Role", ROLE_KEYS["LM"]))

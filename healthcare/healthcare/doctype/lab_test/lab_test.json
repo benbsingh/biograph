@@ -655,7 +655,7 @@
    "read": 1,
    "report": 1,
    "role": "Laboratory User",
-   "share": 1,
+   "share": 0,
    "write": 1
   },
   {
@@ -667,7 +667,7 @@
    "read": 1,
    "report": 1,
    "role": "LabTest Approver",
-   "share": 1,
+   "share": 0,
    "submit": 1,
    "write": 1
   },
@@ -678,7 +678,7 @@
    "read": 1,
    "report": 1,
    "role": "Physician",
-   "share": 1
+   "share": 0
   },
   {
    "amend": 1,
@@ -692,7 +692,7 @@
    "report": 1,
    "role": "System Manager",
    "select": 1,
-   "share": 1,
+   "share": 0,
    "submit": 1,
    "write": 1
   },
