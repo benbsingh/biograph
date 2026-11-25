@@ -26,9 +26,7 @@ def observation_has_permission(doc, ptype, user=None):
 	if allowed_roles is None:
 		return True
 	user_roles = set(frappe.get_roles(user or frappe.session.user))
-	if user_roles & allowed_roles:
-		return True
-	return False
+	return bool(user_roles & allowed_roles)
 
 
 def check_permission(doc, ptype, user):

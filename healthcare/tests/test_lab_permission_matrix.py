@@ -142,6 +142,11 @@ def _denied_letters(row, key):
 	return "".join(letter for letter in ALL_LETTERS if letter not in granted)
 
 
+def _live_rows():
+	"""Return the MATRIX rows to check. Pending rows (R-AUD) are skipped."""
+	return [row for row in MATRIX if row.get("status") != "pending"]
+
+
 def _make_user(key, role):
 	"""Create a user holding only `role`. NR (role None) holds no role.
 
@@ -274,14 +279,12 @@ class TestLabPermissionMatrix(IntegrationTestCase):
 
 	def test_matrix_covers_phase1_doctypes(self):
 		"""AC-5: every Phase 1 DocType has a matrix row. A new DocType needs one."""
-		rows = {row["doctype"] for row in MATRIX if row.get("status") != "pending"}
+		rows = {row["doctype"] for row in _live_rows()}
 		self.assertEqual(sorted(set(PHASE1_DOCTYPES) - rows), [])
 
 	def test_allowed_cells(self):
 		"""AC-2: each letter a role holds in the matrix is granted on the fixture."""
-		for row in MATRIX:
-			if row.get("status") == "pending":
-				continue
+		for row in _live_rows():
 			for key, letters in row["allow"].items():
 				for letter in letters:
 					with self.subTest(ref=row["ref"], role=key, ptype=PTYPES[letter]):
@@ -290,9 +293,7 @@ class TestLabPermissionMatrix(IntegrationTestCase):
 
 	def test_denied_cells(self):
 		"""AC-3: each letter not granted (or listed in deny) is refused with the same user."""
-		for row in MATRIX:
-			if row.get("status") == "pending":
-				continue
+		for row in _live_rows():
 			for key in ROLE_KEYS:
 				for letter in _denied_letters(row, key):
 					with self.subTest(ref=row["ref"], role=key, ptype=PTYPES[letter]):
