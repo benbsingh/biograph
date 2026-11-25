@@ -116,6 +116,11 @@ after_migrate = "healthcare.after_migrate.execute_migrate"
 # 	"*": "healthcare.permissions.check_permission",
 # }
 
+# Observation is shared by vitals and lab results; this hook narrows lab results only.
+has_permission = {
+	"Observation": "healthcare.permissions.observation_has_permission",
+}
+
 # DocType Class
 # ---------------
 # Override standard doctype classes
