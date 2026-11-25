@@ -143,5 +143,20 @@ def execute_migrate():
     }
 
     create_custom_fields(custom_fields)
+    ensure_lab_manager_role()
 
-    print("Custom fields for Healthcare Insurance and Referral Practitioner Integration created successfully") 
+    print("Custom fields for Healthcare Insurance and Referral Practitioner Integration created successfully")
+
+
+def ensure_lab_manager_role():
+    """Create the "Lab Manager" role on sites that were installed before it existed.
+
+    Fresh installs get restricted roles from the Domain setup (healthcare/setup.py). That setup
+    returns early on existing sites, so this call adds the role on the next `bench migrate`.
+    It is idempotent: an existing role is left unchanged, so re-running migrate is safe.
+    """
+    if frappe.db.exists("Role", "Lab Manager"):
+        return
+    frappe.get_doc({"doctype": "Role", "role_name": "Lab Manager", "desk_access": 1}).insert(
+        ignore_permissions=True
+    ) 
