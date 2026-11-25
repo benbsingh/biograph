@@ -190,6 +190,27 @@
    "role": "System Manager",
    "share": 1,
    "write": 1
+  },
+  {
+   "create": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Laboratory User"
+  },
+  {
+   "print": 1,
+   "read": 1,
+   "role": "LabTest Approver"
+  },
+  {
+   "print": 1,
+   "read": 1,
+   "role": "Physician"
+  },
+  {
+   "print": 1,
+   "read": 1,
+   "role": "Lab Manager"
   }
  ],
  "row_format": "Dynamic",
