@@ -119,7 +119,8 @@ LAB_LINK_TARGETS = {
 	"Diagnostic Report",
 }
 LAB_WORKSPACE = "Laboratory"
-SHARED_WORKSPACES = ("Healthcare", "Diagnostics")
+# Practitioner is the Physician workspace; it must not carry lab links either (AC-16).
+SHARED_WORKSPACES = ("Healthcare", "Diagnostics", "Practitioner")
 
 
 def _denied_letters(row, key):
