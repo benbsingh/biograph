@@ -1,0 +1,179 @@
+{
+ "charts": [],
+ "content": "[{\"id\":\"lab0card01\",\"type\":\"card\",\"data\":{\"card_name\":\"Laboratory\",\"col\":4}},{\"id\":\"lab0card02\",\"type\":\"card\",\"data\":{\"card_name\":\"Laboratory Setup\",\"col\":4}}]",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "microscope",
+ "idx": 0,
+ "indicator_color": "green",
+ "is_hidden": 0,
+ "label": "Laboratory",
+ "links": [
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Laboratory",
+   "link_count": 0,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Lab Test",
+   "link_count": 0,
+   "link_to": "Lab Test",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Sample Collection",
+   "link_count": 0,
+   "link_to": "Sample Collection",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Specimen",
+   "link_count": 0,
+   "link_to": "Specimen",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Observation",
+   "link_count": 0,
+   "link_to": "Observation",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Diagnostic Report",
+   "link_count": 0,
+   "link_to": "Diagnostic Report",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Laboratory Setup",
+   "link_count": 0,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Lab Test Template",
+   "link_count": 0,
+   "link_to": "Lab Test Template",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Lab Test Sample",
+   "link_count": 0,
+   "link_to": "Lab Test Sample",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Observation Template",
+   "link_count": 0,
+   "link_to": "Observation Template",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Lab Test UOM",
+   "link_count": 0,
+   "link_to": "Lab Test UOM",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Antibiotic",
+   "link_count": 0,
+   "link_to": "Antibiotic",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Sensitivity",
+   "link_count": 0,
+   "link_to": "Sensitivity",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "module": "Healthcare",
+ "name": "Laboratory",
+ "number_cards": [],
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "restrict_to_domain": "Healthcare",
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Laboratory User"
+  },
+  {
+   "role": "LabTest Approver"
+  },
+  {
+   "role": "Lab Manager"
+  }
+ ],
+ "sequence_id": 23.0,
+ "shortcuts": [],
+ "title": "Laboratory",
+ "type": "Workspace",
+ "app": "healthcare"
+}
