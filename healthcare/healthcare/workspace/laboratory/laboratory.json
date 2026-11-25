@@ -78,12 +78,13 @@
   {
    "dependencies": "",
    "hidden": 0,
-   "is_query_report": 0,
+   "is_query_report": 1,
    "label": "Lab Test Report",
    "link_count": 0,
    "link_to": "Lab Test Report",
-   "link_type": "DocType",
+   "link_type": "Report",
    "onboard": 0,
+   "report_ref_doctype": "Lab Test",
    "type": "Link"
   },
   {
