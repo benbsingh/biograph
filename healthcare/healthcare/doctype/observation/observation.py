@@ -483,6 +483,27 @@ def get_observation_result_template(template_name, observation):
 	return terms
 
 
+LAB_REJECT_ROLES = {"System Manager", "LabTest Approver"}
+
+
+def is_lab_reject_allowed(observation_doc):
+	"""Return True when a reject on this observation must run with ignore_permissions.
+
+	Rejecting a lab Observation cancels it and inserts a copy. The lab Observation hook denies
+	cancel and create for LabTest Approver, so the reject path checks the role itself and then
+	skips the document permission checks. Only System Manager and LabTest Approver may reject
+	a lab observation. Non-lab observations (vitals) keep their normal checks and return False.
+	"""
+	if observation_doc.get("observation_category") != "Laboratory":
+		return False
+	if not set(frappe.get_roles(frappe.session.user)) & LAB_REJECT_ROLES:
+		frappe.throw(
+			_("Only LabTest Approver or System Manager can reject a lab observation."),
+			frappe.PermissionError,
+		)
+	return True
+
+
 @frappe.whitelist()
 def set_observation_status(observation, status, reason=None, parent_obs=None):
 	observation_doc = frappe.get_doc("Observation", observation)
@@ -500,14 +521,18 @@ def set_observation_status(observation, status, reason=None, parent_obs=None):
 	if status == "Approved":
 		observation_doc.submit()
 	elif status == "Rejected":
+		ignore_permissions = is_lab_reject_allowed(observation_doc)
+		observation_doc.flags.ignore_permissions = ignore_permissions
 		if not observation_doc.has_component:
 			observation_doc.cancel()
 		new_doc = frappe.copy_doc(observation_doc)
+		# The copy inherits docstatus 2 from the cancelled original; a new record must start as a draft.
+		new_doc.docstatus = 0
 		new_doc.status = ""
 		new_doc.disapproval_reason = ""
 		if parent_obs:
 			new_doc.parent_observation = parent_obs
-		new_doc.insert()
+		new_doc.insert(ignore_permissions=ignore_permissions)
 		if observation_doc.has_component:
 			parent_obs = new_doc.name
 
