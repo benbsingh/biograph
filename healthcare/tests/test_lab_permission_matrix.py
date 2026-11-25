@@ -39,6 +39,8 @@ PTYPES = {
 ALL_LETTERS = "".join(PTYPES)
 
 # Phase 1 DocTypes from Section 2. AC-5 fails if any of them has no matrix row.
+# Sales Invoice is not listed: ERPNext grants read to All, so the no-role check (AC-4) does not
+# apply to it. Its lab-role refusals stay in R-INV (D-10).
 PHASE1_DOCTYPES = (
 	"Lab Test",
 	"Lab Test Template",
@@ -49,7 +51,6 @@ PHASE1_DOCTYPES = (
 	"Diagnostic Report",
 	"Patient",
 	"Sample Type",
-	"Sales Invoice",
 )
 
 # Each row: "allow" maps a matrix key to granted letters; a role not listed holds nothing.
@@ -120,15 +121,18 @@ LAB_LINK_TARGETS = {
 	"Lab Test",
 	"Lab Test Template",
 	"Lab Test Sample",
+	"Lab Test Report",
+	"Lab Prescription",
 	"Sample Collection",
+	"Sample Type",
 	"Specimen",
 	"Observation",
 	"Observation Template",
 	"Diagnostic Report",
 }
 LAB_WORKSPACE = "Laboratory"
-# Practitioner is the Physician workspace; it must not carry lab links either (AC-16).
-SHARED_WORKSPACES = ("Healthcare", "Diagnostics", "Practitioner")
+# Shared workspaces must carry no lab link (AC-16). Practitioner is the Physician workspace.
+SHARED_WORKSPACES = ("Healthcare", "Setup", "Reception", "Diagnostics", "Practitioner")
 
 
 def _denied_letters(row, key):
@@ -301,7 +305,7 @@ class TestLabPermissionMatrix(IntegrationTestCase):
 						self.assertFalse(self._can(key, row["doctype"], PTYPES[letter], doc))
 
 	def test_no_role_user_refused_all_reads(self):
-		"""AC-4: a user with no role is refused read on every Phase 1 DocType and Sales Invoice."""
+		"""AC-4: a user with no role is refused read on every Phase 1 DocType (Sales Invoice excluded, D-10)."""
 		for doctype in PHASE1_DOCTYPES:
 			with self.subTest(doctype=doctype):
 				self.assertFalse(self._can("NR", doctype, "read", self._doc_for(doctype)))
@@ -352,12 +356,25 @@ class TestLabPermissionMatrix(IntegrationTestCase):
 		self.assertTrue(self._can("HA", "Observation", "write", vital.name))
 		self.assertTrue(self._can("HA", "Observation", "create", vital.name))
 
+	def test_observation_delete_lab_vs_vitals(self):
+		"""D-3 and Q-2 = B: HA cannot delete a lab Observation (hook) but keeps its vitals delete grant."""
+		lab = self.fixtures["Observation"]
+		vital = self.fixtures["Observation (vitals)"]
+
+		lab_doc = frappe.get_doc("Observation", lab)
+		self.assertFalse(observation_has_permission(lab_doc, "delete", user=self.emails["HA"]))
+		self.assertFalse(self._can("HA", "Observation", "delete", lab))
+		self.assertTrue(self._can("HA", "Observation", "delete", vital))
+
 	def test_lab_manager_role_exists(self):
 		"""Phase 1: the Lab Manager role exists after migrate (Q-1 = A)."""
 		self.assertTrue(frappe.db.exists("Role", ROLE_KEYS["LM"]))
 
 	def test_lab_workspace_visibility(self):
-		"""AC-16, AC-17: only lab roles see the Laboratory workspace, and shared workspaces carry no lab link."""
+		"""AC-16: the Laboratory workspace is visible to the lab roles and System Manager (amended AC-16).
+
+		Shared workspaces (Healthcare, Setup, Reception, Diagnostics, Practitioner) carry no lab link.
+		"""
 		lab_roles = {row.role for row in frappe.get_doc("Workspace", LAB_WORKSPACE).roles}
 		self.assertEqual(lab_roles, {"System Manager", "Laboratory User", "LabTest Approver", "Lab Manager"})
 
