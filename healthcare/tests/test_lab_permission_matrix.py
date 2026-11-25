@@ -96,7 +96,15 @@ MATRIX = [
 	{
 		"ref": "R-PT",
 		"doctype": "Patient",
-		"allow": {"SM": "RCWDP", "HA": "RCWP", "LU": "RP", "LTA": "RP", "PH": "RCWP", "NU": "RWP", "LM": "RP"},
+		"allow": {
+			"SM": "RCWDP",
+			"HA": "RCWP",
+			"LU": "RP",
+			"LTA": "RP",
+			"PH": "RCWP",
+			"NU": "RWP",
+			"LM": "RP",
+		},
 	},
 	{"ref": "R-ST", "doctype": "Sample Type", "allow": {"SM": "RCWDP"}},
 	{
@@ -216,7 +224,9 @@ def _make_fixtures():
 	).name
 	company = frappe.get_all("Company", pluck="name", limit=1)[0]
 	# Template after_insert creates an Item unless one is linked, so link a fixture Item.
-	item = _insert({"doctype": "Item", "item_code": "_LIMS W1 Test Item", "item_group": "All Item Groups"}).name
+	item = _insert(
+		{"doctype": "Item", "item_code": "_LIMS W1 Test Item", "item_group": "All Item Groups"}
+	).name
 	lab_template = _insert(
 		{
 			"doctype": "Lab Test Template",
