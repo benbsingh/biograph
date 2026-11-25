@@ -384,8 +384,10 @@ class TestLabPermissionMatrix(IntegrationTestCase):
 				self.assertFalse(links & LAB_LINK_TARGETS)
 
 		# Sample Type and Lab Test Report lost their shared-workspace links, so the Laboratory workspace must carry them.
-		lab_links = {row.link_to for row in frappe.get_doc("Workspace", LAB_WORKSPACE).links}
-		self.assertTrue({"Sample Type", "Lab Test Report"} <= lab_links)
+		lab_links = {row.link_to: row.link_type for row in frappe.get_doc("Workspace", LAB_WORKSPACE).links}
+		self.assertTrue({"Sample Type", "Lab Test Report"} <= set(lab_links))
+		# Lab Test Report is a Script Report; typing it as a DocType gives a dead link.
+		self.assertEqual(lab_links["Lab Test Report"], "Report")
 
 	def test_audit_trail_row_pending(self):
 		"""AC-18: R-AUD is a pending row. It skips and does not fail the run until BR-1.4 creates the DocType."""
