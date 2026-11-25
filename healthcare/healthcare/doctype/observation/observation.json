@@ -587,7 +587,7 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
-   "share": 1,
+   "share": 0,
    "submit": 1,
    "write": 1
   },
@@ -601,7 +601,7 @@
    "read": 1,
    "report": 1,
    "role": "Healthcare Administrator",
-   "share": 1,
+   "share": 0,
    "submit": 1,
    "write": 1
   },
