@@ -445,6 +445,26 @@
    "report": 1,
    "role": "Laboratory User",
    "share": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "print": 1,
+   "read": 1,
+   "role": "LabTest Approver"
+  },
+  {
+   "create": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Lab Manager",
+   "write": 1
   }
  ],
  "restrict_to_domain": "Healthcare",

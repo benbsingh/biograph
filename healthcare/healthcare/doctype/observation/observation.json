@@ -577,6 +577,7 @@
  "owner": "Administrator",
  "permissions": [
   {
+   "amend": 1,
    "cancel": 1,
    "create": 1,
    "delete": 1,
@@ -603,6 +604,25 @@
    "share": 1,
    "submit": 1,
    "write": 1
+  },
+  {
+   "create": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Laboratory User",
+   "write": 1
+  },
+  {
+   "print": 1,
+   "read": 1,
+   "role": "LabTest Approver",
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "print": 1,
+   "read": 1,
+   "role": "Physician"
   }
  ],
  "row_format": "Dynamic",
