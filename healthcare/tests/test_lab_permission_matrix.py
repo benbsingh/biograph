@@ -10,6 +10,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import random_string
 
+from healthcare.healthcare.doctype.observation.observation import set_observation_status
 from healthcare.permissions import observation_has_permission
 
 # Matrix column key -> Frappe role. NR is a user with no role beyond All and Guest.
@@ -365,6 +366,49 @@ class TestLabPermissionMatrix(IntegrationTestCase):
 		self.assertFalse(observation_has_permission(lab_doc, "delete", user=self.emails["HA"]))
 		self.assertFalse(self._can("HA", "Observation", "delete", lab))
 		self.assertTrue(self._can("HA", "Observation", "delete", vital))
+
+	def _make_submitted_lab_observation(self):
+		"""Return a submitted lab Observation with a result, the state the approval step works on."""
+		template = frappe.db.get_value("Observation", self.fixtures["Observation"], "observation_template")
+		name = _insert(
+			{
+				"doctype": "Observation",
+				"patient": self.fixtures["Patient"],
+				"observation_template": template,
+				"company": frappe.get_all("Company", pluck="name", limit=1)[0],
+				"observation_category": "Laboratory",
+				"result_text": "Positive",
+			}
+		).name
+		frappe.get_doc("Observation", name).submit()
+		return name
+
+	def test_lab_observation_reject(self):
+		"""Reject on a lab Observation: LabTest Approver can, Laboratory User cannot (D-7).
+
+		The reject cancels the observation and inserts one fresh draft copy. The test checks
+		those outcomes, not the calls the controller makes.
+		"""
+		name = self._make_submitted_lab_observation()
+		patient = self.fixtures["Patient"]
+		template = frappe.db.get_value("Observation", name, "observation_template")
+
+		self._run_as("LU")
+		with self.assertRaises(frappe.PermissionError):
+			set_observation_status(name, "Rejected", reason="Wrong sample")
+		self.assertEqual(frappe.db.get_value("Observation", name, "docstatus"), 1)
+
+		self._run_as("LTA")
+		drafts_before = frappe.db.count(
+			"Observation", {"patient": patient, "observation_template": template, "docstatus": 0}
+		)
+		set_observation_status(name, "Rejected", reason="Wrong sample")
+		self.assertEqual(frappe.db.get_value("Observation", name, "docstatus"), 2)
+		self.assertEqual(frappe.db.get_value("Observation", name, "status"), "Rejected")
+		drafts_after = frappe.db.count(
+			"Observation", {"patient": patient, "observation_template": template, "docstatus": 0}
+		)
+		self.assertEqual(drafts_after - drafts_before, 1)
 
 	def test_lab_manager_role_exists(self):
 		"""Phase 1: the Lab Manager role exists after migrate (Q-1 = A)."""

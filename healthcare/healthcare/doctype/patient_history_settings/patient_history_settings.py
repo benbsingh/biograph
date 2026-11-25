@@ -124,7 +124,14 @@ def delete_medical_record(doc, method=None):
 
 	record = frappe.db.exists("Patient Medical Record", {"reference_name": doc.name})
 	if record:
-		frappe.delete_doc("Patient Medical Record", record, force=1)
+		# Follow the parent's permission bypass: a lab reject cancels the Observation as LabTest
+		# Approver, who holds no delete on Patient Medical Record.
+		frappe.delete_doc(
+			"Patient Medical Record",
+			record,
+			force=1,
+			ignore_permissions=bool(doc.flags.ignore_permissions),
+		)
 
 
 def set_subject_field(doc):
