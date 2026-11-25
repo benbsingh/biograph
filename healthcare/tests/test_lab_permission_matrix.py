@@ -383,6 +383,10 @@ class TestLabPermissionMatrix(IntegrationTestCase):
 				links = {row.link_to for row in frappe.get_doc("Workspace", name).links}
 				self.assertFalse(links & LAB_LINK_TARGETS)
 
+		# Sample Type and Lab Test Report lost their shared-workspace links, so the Laboratory workspace must carry them.
+		lab_links = {row.link_to for row in frappe.get_doc("Workspace", LAB_WORKSPACE).links}
+		self.assertTrue({"Sample Type", "Lab Test Report"} <= lab_links)
+
 	def test_audit_trail_row_pending(self):
 		"""AC-18: R-AUD is a pending row. It skips and does not fail the run until BR-1.4 creates the DocType."""
 		self.skipTest("R-AUD pending: audit DocType (BR-1.4) not created yet")
