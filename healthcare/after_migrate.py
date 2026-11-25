@@ -149,14 +149,14 @@ def execute_migrate():
 
 
 def ensure_lab_manager_role():
-    """Create the "Lab Manager" role on sites that were installed before it existed.
+    """Create the "Lab Manager" role if it is missing. Runs on every `bench migrate`.
 
-    Fresh installs get restricted roles from the Domain setup (healthcare/setup.py). That setup
-    returns early on existing sites, so this call adds the role on the next `bench migrate`.
-    It is idempotent: an existing role is left unchanged, so re-running migrate is safe.
+    healthcare/setup.py does not create this role, so migrate is the place that creates it,
+    on fresh installs and on existing sites alike. It is idempotent: an existing role is left
+    unchanged, so re-running migrate is safe.
     """
     if frappe.db.exists("Role", "Lab Manager"):
         return
     frappe.get_doc({"doctype": "Role", "role_name": "Lab Manager", "desk_access": 1}).insert(
         ignore_permissions=True
-    ) 
+    )
