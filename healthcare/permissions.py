@@ -16,19 +16,18 @@ LAB_OBSERVATION_ROLES = {
 def observation_has_permission(doc, ptype, user=None):
 	"""Deny write-type ptypes on lab Observations for roles outside the matrix.
 
-	Vitals and other categories return None and keep their DocType grants.
-	Frappe reads a False from a controller hook as a deny. A None return
-	defers to the grants. This hook never grants, so a role without a DocType
-	grant stays refused.
+	Frappe treats any falsy controller return as a deny, so "no objection" must
+	be True, not None. True does not grant: role grants are checked after the hook.
+	Vitals and other categories return True and keep their DocType grants.
 	"""
 	if doc.get("observation_category") != "Laboratory":
-		return None
+		return True
 	allowed_roles = LAB_OBSERVATION_ROLES.get(ptype)
 	if allowed_roles is None:
-		return None
+		return True
 	user_roles = set(frappe.get_roles(user or frappe.session.user))
 	if user_roles & allowed_roles:
-		return None
+		return True
 	return False
 
 
