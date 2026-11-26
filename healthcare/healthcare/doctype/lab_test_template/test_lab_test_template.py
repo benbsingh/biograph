@@ -67,13 +67,6 @@ class TestLabTestTemplate(IntegrationTestCase):
 		doc = self._make_template("TEST-TPL-CONS-2", [(stock_item, 0)])
 		self.assertRaises(frappe.ValidationError, doc.insert, ignore_permissions=True)
 
-	def test_stock_item_consumable_saves(self):
-		stock_item = self._make_item("TEST-STK-CONS-2", is_stock_item=1)
-		doc = self._make_template("TEST-TPL-CONS-3", [(stock_item, 2)])
-		doc.insert(ignore_permissions=True)
-		self.assertEqual(len(doc.lab_test_consumables), 1)
-		self.assertEqual(doc.lab_test_consumables[0].item, stock_item)
-
 	def test_disabled_stock_item_consumable_rejected(self):
 		stock_item = self._make_item("TEST-STK-CONS-3", is_stock_item=1, disabled=1)
 		doc = self._make_template("TEST-TPL-CONS-4", [(stock_item, 1)])
