@@ -443,6 +443,13 @@ class TestLabPermissionMatrix(IntegrationTestCase):
 		"""Phase 1: the Lab Manager role exists after migrate (Q-1 = A)."""
 		self.assertTrue(frappe.db.exists("Role", ROLE_KEYS["LM"]))
 
+	def test_lab_manager_can_read_item(self):
+		"""BR-1.10 (A5): Lab Manager reads Item so the consumable link picker works. No write, no delete."""
+		lm = self.emails["LM"]
+		self.assertTrue(frappe.has_permission("Item", "read", user=lm))
+		self.assertFalse(frappe.has_permission("Item", "write", user=lm))
+		self.assertFalse(frappe.has_permission("Item", "delete", user=lm))
+
 	def test_lab_workspace_visibility(self):
 		"""AC-16: the Laboratory workspace is visible to the lab roles and System Manager (amended AC-16).
 
