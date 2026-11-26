@@ -21,5 +21,7 @@ class TestSampleCollection(IntegrationTestCase):
 			}
 		)
 		sample.insert(ignore_permissions=True)
-		self.assertRaises(frappe.ValidationError, frappe.rename_doc, "Sample Collection", sample.name, "SAMPLE-RENAMED")
+		self.assertRaises(
+			frappe.ValidationError, frappe.rename_doc, "Sample Collection", sample.name, "SAMPLE-RENAMED"
+		)
 		self.assertTrue(frappe.db.exists("Sample Collection", sample.name))

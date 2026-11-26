@@ -18,7 +18,9 @@ from healthcare.healthcare.doctype.observation_template.observation_template imp
 class SampleCollection(Document):
 	def before_rename(self, old, new, merge=False):
 		# Sample ID is printed on specimen labels; it must never change once issued.
-		frappe.throw(_("Sample ID {0} is immutable and cannot be renamed").format(old), title=_("Not Allowed"))
+		frappe.throw(
+			_("Sample ID {0} is immutable and cannot be renamed").format(old), title=_("Not Allowed")
+		)
 
 	def after_insert(self):
 		if self.observation_sample_collection:

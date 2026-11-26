@@ -34,14 +34,16 @@ class Patient(Document):
 		self.set_full_name()
 		self.flags.is_new_doc = self.is_new()
 		self.flags.existing_customer = self.is_new() and bool(self.customer)
-		
+
 		# Check for duplicates
-		if self.is_new() and frappe.db.get_single_value("Healthcare Settings", "enable_patient_duplicate_check"):
+		if self.is_new() and frappe.db.get_single_value(
+			"Healthcare Settings", "enable_patient_duplicate_check"
+		):
 			from healthcare.healthcare.utils import PatientDuplicateChecker
-			
+
 			checker = PatientDuplicateChecker(self)
 			result = checker.check_duplicates()
-			
+
 			if result["status"] == "disallow":
 				frappe.throw(
 					_(result["message"] or "Duplicate patient record(s) found"),
@@ -52,7 +54,7 @@ class Patient(Document):
 			elif result["status"] == "warn":
 				self.flags.duplicate_check_warning = {
 					"message": result["message"] or "Possible duplicate patient record(s) found",
-					"matches": result["matches"]
+					"matches": result["matches"],
 				}
 
 	def before_insert(self):
@@ -171,7 +173,9 @@ class Patient(Document):
 
 	def before_rename(self, old, new, merge=False):
 		# Patient ID is printed on labels and reports; it must never change once issued.
-		frappe.throw(_("Patient ID {0} is immutable and cannot be renamed").format(old), title=_("Not Allowed"))
+		frappe.throw(
+			_("Patient ID {0} is immutable and cannot be renamed").format(old), title=_("Not Allowed")
+		)
 
 	def get_patient_name(self):
 		self.set_full_name()
