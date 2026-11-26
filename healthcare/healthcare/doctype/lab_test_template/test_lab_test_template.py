@@ -83,6 +83,7 @@ class TestLabTestTemplate(IntegrationTestCase):
 		self.assertEqual(row.item_name, stock_item)
 		self.assertEqual(row.uom, "Nos")
 		self.assertTrue(frappe.get_meta("Lab Test Consumable").get_field("item_name").read_only)
+		self.assertTrue(frappe.get_meta("Lab Test Consumable").get_field("uom").read_only)
 
 	def test_lab_test_from_template_with_consumables_creates_no_sle(self):
 		stock_item = self._make_item("TEST-STK-CONS-5", is_stock_item=1)
