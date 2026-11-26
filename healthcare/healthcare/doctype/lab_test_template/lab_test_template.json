@@ -42,6 +42,7 @@
   "descriptive_test_templates",
   "section_break_group",
   "lab_test_groups",
+  "lab_test_consumables",
   "sample_collection_tab",
   "sb_sample_collection",
   "sample",
@@ -201,6 +202,12 @@
    "fieldname": "lab_test_groups",
    "fieldtype": "Table",
    "options": "Lab Test Group Template"
+  },
+  {
+   "fieldname": "lab_test_consumables",
+   "fieldtype": "Table",
+   "label": "Stock Consumables",
+   "options": "Lab Test Consumable"
   },
   {
    "collapsible": 1,

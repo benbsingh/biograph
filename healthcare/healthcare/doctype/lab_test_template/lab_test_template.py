@@ -41,6 +41,7 @@ class LabTestTemplate(Document):
 			frappe.throw(_("Sample Quantity cannot be negative or 0"), title=_("Invalid Quantity"))
 
 		self.validate_conversion_factor()
+		self.validate_consumables()
 		self.enable_disable_item()
 
 	def on_update(self):
@@ -85,6 +86,16 @@ class LabTestTemplate(Document):
 		if item_price:
 			return item_price
 		return False
+
+	def validate_consumables(self):
+		for row in self.lab_test_consumables:
+			if flt(row.qty) <= 0:
+				frappe.throw(_("Row #{0}: Qty per Test must be greater than zero").format(row.idx))
+			item = frappe.db.get_value("Item", row.item, ["is_stock_item", "disabled"], as_dict=True) or {}
+			if not item.get("is_stock_item"):
+				frappe.throw(_("Row #{0}: {1} is not a stock item").format(row.idx, row.item))
+			if item.get("disabled"):
+				frappe.throw(_("Row #{0}: {1} is disabled").format(row.idx, row.item))
 
 	def validate_conversion_factor(self):
 		if self.lab_test_template_type == "Single" and self.secondary_uom and not self.conversion_factor:
