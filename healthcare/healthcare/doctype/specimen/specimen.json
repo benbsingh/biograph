@@ -19,6 +19,14 @@
   "column_break_1kvr",
   "patient_age",
   "patient_gender",
+  "section_break_accession",
+  "lab_test",
+  "department",
+  "column_break_accession",
+  "accession_status",
+  "rejection_reason",
+  "accessioned_by",
+  "accessioned_at",
   "section_break_aas5",
   "note"
  ],
@@ -91,6 +99,57 @@
    "fieldtype": "Link",
    "label": "Patient Gender",
    "options": "Gender",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_accession",
+   "fieldtype": "Section Break",
+   "label": "Accessioning"
+  },
+  {
+   "fieldname": "lab_test",
+   "fieldtype": "Link",
+   "label": "Lab Test",
+   "options": "Lab Test"
+  },
+  {
+   "fetch_from": "lab_test.department",
+   "fieldname": "department",
+   "fieldtype": "Link",
+   "label": "Department",
+   "options": "Medical Department",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_accession",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Pending",
+   "fieldname": "accession_status",
+   "fieldtype": "Select",
+   "label": "Accession Status",
+   "options": "Pending\nAccepted\nRejected",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.accession_status=='Rejected'",
+   "fieldname": "rejection_reason",
+   "fieldtype": "Small Text",
+   "label": "Rejection Reason",
+   "read_only": 1
+  },
+  {
+   "fieldname": "accessioned_by",
+   "fieldtype": "Link",
+   "label": "Accessioned By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "accessioned_at",
+   "fieldtype": "Datetime",
+   "label": "Accessioned At",
    "read_only": 1
   }
  ],

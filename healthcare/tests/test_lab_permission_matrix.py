@@ -58,7 +58,6 @@ PHASE1_DOCTYPES = (
 # A row with "deny" lists the refused letters per role and skips the allow check.
 # Sales Invoice is ERPNext standard: only the refusals in D-10 are checked here.
 # Observation HA is RP: the lab-scoped hook refuses HA writes on lab results (Q-2 = B).
-# R-AUD is pending until the BR-1.4 audit DocType exists (AC-18).
 MATRIX = [
 	{
 		"ref": "R-LT",
@@ -115,7 +114,7 @@ MATRIX = [
 		"allow": {},
 		"deny": {"LU": "CS", "PH": "CS", "NU": "CS", "PT": "CS"},
 	},
-	{"ref": "R-AUD", "doctype": "Audit Trail (BR-1.4)", "status": "pending"},
+	{"ref": "R-AUD", "doctype": "LIMS Audit Entry", "allow": {"SM": "R", "LM": "R"}},
 ]
 
 LAB_LINK_TARGETS = {
@@ -148,8 +147,8 @@ def _denied_letters(row, key):
 
 
 def _live_rows():
-	"""Return the MATRIX rows to check. Pending rows (R-AUD) are skipped."""
-	return [row for row in MATRIX if row.get("status") != "pending"]
+	"""Return the MATRIX rows to check."""
+	return list(MATRIX)
 
 
 def _make_user(key, role):
@@ -461,7 +460,3 @@ class TestLabPermissionMatrix(IntegrationTestCase):
 		self.assertTrue({"Sample Type", "Lab Test Report"} <= set(lab_links))
 		# Lab Test Report is a Script Report; typing it as a DocType gives a dead link.
 		self.assertEqual(lab_links["Lab Test Report"], "Report")
-
-	def test_audit_trail_row_pending(self):
-		"""AC-18: R-AUD is a pending row. It skips and does not fail the run until BR-1.4 creates the DocType."""
-		self.skipTest("R-AUD pending: audit DocType (BR-1.4) not created yet")
