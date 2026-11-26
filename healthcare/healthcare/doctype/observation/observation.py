@@ -309,12 +309,12 @@ def set_reference_string(child):
 	display_reference = ""
 	if (child.reference_from and child.reference_to) or child.conditions:
 		if child.reference_from and child.reference_to:
-			display_reference = f"{child.reference_from!s} - {child.reference_to!s}"
+			display_reference = f"{str(child.reference_from)} - {str(child.reference_to)}"
 		elif child.conditions:
-			display_reference = f"{child.conditions!s}"
+			display_reference = f"{str(child.conditions)}"
 
 		if child.short_interpretation:
-			display_reference = f"{display_reference}: {child.short_interpretation!s}<br>"
+			display_reference = f"{display_reference}: {str(child.short_interpretation)}<br>"
 
 	elif child.short_interpretation or child.long_interpretation:
 		display_reference = f"{(child.short_interpretation if child.short_interpretation else child.long_interpretation)}<br>"
@@ -737,7 +737,7 @@ def get_observations_for_medical_record(observation, parent_observation=None):
 
 	else:
 		child_observations = get_child_observations(obs_doc)
-		obs_dict, _ = return_child_observation_data_as_dict(child_observations, obs_doc)
+		obs_dict, obs_length = return_child_observation_data_as_dict(child_observations, obs_doc)
 
 		if len(obs_dict) > 0:
 			out_data.append(obs_dict)
