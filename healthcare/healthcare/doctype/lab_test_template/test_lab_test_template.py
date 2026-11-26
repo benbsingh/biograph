@@ -30,6 +30,18 @@ class TestLabTestTemplate(IntegrationTestCase):
 			)
 		return "TEST-DEPT-CONS"
 
+	def _make_patient(self):
+		customer_group = frappe.get_all("Customer Group", filters={"is_group": 0}, pluck="name", limit=1)[0]
+		patient = frappe.get_doc(
+			{
+				"doctype": "Patient",
+				"first_name": "_TPL CONS Patient",
+				"sex": "Female",
+				"customer_group": customer_group,
+			}
+		)
+		return patient.insert(ignore_permissions=True).name
+
 	def _make_template(self, code, consumables):
 		doc = frappe.get_doc(
 			{
@@ -78,3 +90,26 @@ class TestLabTestTemplate(IntegrationTestCase):
 		self.assertEqual(row.item_name, stock_item)
 		self.assertEqual(row.uom, "Nos")
 		self.assertTrue(frappe.get_meta("Lab Test Consumable").get_field("item_name").read_only)
+
+	def test_lab_test_from_template_with_consumables_creates_no_sle(self):
+		stock_item = self._make_item("TEST-STK-CONS-5", is_stock_item=1)
+		template = self._make_template("TEST-TPL-CONS-6", [(stock_item, 1)])
+		template.lab_test_template_type = "Descriptive"
+		template.append("descriptive_test_templates", {"particulars": "Result"})
+		template.insert(ignore_permissions=True)
+
+		sle_before = frappe.db.count("Stock Ledger Entry")
+		stock_entry_before = frappe.db.count("Stock Entry")
+
+		lab_test = frappe.new_doc("Lab Test")
+		lab_test.template = template.name
+		lab_test.patient = self._make_patient()
+		lab_test.patient_sex = "Female"
+		lab_test.save()
+		for row in lab_test.descriptive_test_items:
+			row.result_value = "Positive"
+		lab_test.save()
+		lab_test.submit()
+
+		self.assertEqual(frappe.db.count("Stock Ledger Entry"), sle_before)
+		self.assertEqual(frappe.db.count("Stock Entry"), stock_entry_before)
