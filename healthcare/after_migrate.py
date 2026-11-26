@@ -144,6 +144,7 @@ def execute_migrate():
 
     create_custom_fields(custom_fields)
     ensure_lab_manager_role()
+    ensure_lab_manager_item_read()
 
     print("Custom fields for Healthcare Insurance and Referral Practitioner Integration created successfully")
 
@@ -160,3 +161,17 @@ def ensure_lab_manager_role():
     frappe.get_doc({"doctype": "Role", "role_name": "Lab Manager", "desk_access": 1}).insert(
         ignore_permissions=True
     )
+
+
+def ensure_lab_manager_item_read():
+    """Grant the "Lab Manager" role read-only access to Item. Runs on every `bench migrate`.
+
+    The consumables table on Lab Test Template links to Item. Without read on Item, the link
+    picker cannot search stock items for a Lab Manager. Only read is granted: no write, no delete.
+    The Custom DocPerm row is created once and left alone on later migrates.
+    """
+    if frappe.db.exists("Custom DocPerm", {"parent": "Item", "role": "Lab Manager", "permlevel": 0}):
+        return
+    frappe.get_doc(
+        {"doctype": "Custom DocPerm", "parent": "Item", "role": "Lab Manager", "permlevel": 0, "read": 1}
+    ).insert(ignore_permissions=True)
