@@ -169,6 +169,10 @@ class Patient(Document):
 		else:
 			set_name_from_naming_options(frappe.get_meta(self.doctype).autoname, self)
 
+	def before_rename(self, old, new, merge=False):
+		# Patient ID is printed on labels and reports; it must never change once issued.
+		frappe.throw(_("Patient ID {0} is immutable and cannot be renamed").format(old), title=_("Not Allowed"))
+
 	def get_patient_name(self):
 		self.set_full_name()
 		name = self.patient_name

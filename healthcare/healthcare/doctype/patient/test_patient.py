@@ -13,6 +13,12 @@ from healthcare.healthcare.doctype.patient_appointment.test_patient_appointment 
 
 
 class TestPatient(IntegrationTestCase):
+	def test_patient_id_cannot_be_renamed(self):
+		frappe.db.sql("""delete from `tabPatient`""")
+		patient = create_patient()
+		self.assertRaises(frappe.ValidationError, frappe.rename_doc, "Patient", patient, "PAT-RENAMED-0001")
+		self.assertTrue(frappe.db.exists("Patient", patient))
+
 	def test_customer_created(self):
 		frappe.db.sql("""delete from `tabPatient`""")
 		frappe.db.set_single_value("Healthcare Settings", "link_customer_to_patient", 1)
