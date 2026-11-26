@@ -450,6 +450,58 @@ class TestLabPermissionMatrix(IntegrationTestCase):
 		self.assertFalse(frappe.has_permission("Item", "write", user=lm))
 		self.assertFalse(frappe.has_permission("Item", "delete", user=lm))
 
+	def test_lab_manager_saves_test_template_with_panel_and_consumable(self):
+		"""BR-1.10 SC1: Lab Manager saves a template with a panel row and a stock consumable, then reloads it."""
+		stock_item = _insert(
+			{
+				"doctype": "Item",
+				"item_code": "_LIMS W1 Stock Item",
+				"item_group": "All Item Groups",
+				"stock_uom": "Nos",
+				"is_stock_item": 1,
+				"is_sales_item": 0,
+				"is_service_item": 0,
+			}
+		).name
+		panel_template = self.fixtures["Lab Test Template"]
+		department = frappe.get_all("Medical Department", pluck="name", limit=1)
+		if not department:
+			department = [_insert({"doctype": "Medical Department", "department": "_LIMS W1 Dept"}).name]
+		self._run_as("LM")
+		doc = frappe.get_doc(
+			{
+				"doctype": "Lab Test Template",
+				"lab_test_code": "_LIMS W1 PANEL",
+				"lab_test_name": "_LIMS W1 Panel",
+				"lab_test_group": "All Item Groups",
+				"department": department[0],
+				"is_billable": 0,
+				"lab_test_groups": [{"lab_test_template": panel_template}],
+				"lab_test_consumables": [{"item": stock_item, "qty": 2}],
+			}
+		)
+		doc.insert()
+		doc.reload()
+		self.assertEqual(doc.lab_test_groups[0].lab_test_template, panel_template)
+		self.assertEqual((doc.lab_test_consumables[0].item, doc.lab_test_consumables[0].qty), (stock_item, 2))
+
+	def test_lab_manager_saves_specimen(self):
+		"""BR-1.10 SC1: Lab Manager creates a Specimen, sets its specimen type, and reloads it."""
+		self._run_as("LM")
+		doc = frappe.get_doc({"doctype": "Specimen", "patient": self.fixtures["Patient"]})
+		doc.insert()
+		doc.specimen_type = self.fixtures["Lab Test Sample"]
+		doc.save()
+		doc.reload()
+		self.assertEqual(doc.specimen_type, self.fixtures["Lab Test Sample"])
+
+	def test_lab_manager_cannot_delete_template_or_specimen(self):
+		"""BR-1.10 SC2: Lab Manager holds no delete on Lab Test Template or Specimen (A1)."""
+		self._run_as("LM")
+		for doctype in ("Lab Test Template", "Specimen"):
+			with self.subTest(doctype=doctype), self.assertRaises(frappe.PermissionError):
+				frappe.delete_doc(doctype, self.fixtures[doctype])
+
 	def test_lab_workspace_visibility(self):
 		"""AC-16: the Laboratory workspace is visible to the lab roles and System Manager (amended AC-16).
 
