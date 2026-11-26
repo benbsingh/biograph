@@ -450,6 +450,25 @@ class TestLabPermissionMatrix(IntegrationTestCase):
 		self.assertFalse(frappe.has_permission("Item", "write", user=lm))
 		self.assertFalse(frappe.has_permission("Item", "delete", user=lm))
 
+	def test_item_perms_survive_lab_manager_grant(self):
+		"""Finding 1: the Lab Manager Item grant must not strip standard Item access from other roles.
+
+		Frappe drops standard DocPerm for a DocType once any Custom DocPerm row exists, so the
+		migrate hook copies the standard rows first. Re-running the hook must leave them alone.
+		"""
+		from healthcare.after_migrate import ensure_lab_manager_item_read
+
+		ensure_lab_manager_item_read()
+		ensure_lab_manager_item_read()
+		item_manager = _make_user("IM", "Item Manager")
+		self.assertTrue(frappe.has_permission("Item", "read", user=item_manager))
+		self.assertTrue(frappe.has_permission("Item", "write", user=item_manager))
+		self.assertTrue(frappe.has_permission("Item", "read", user=self.emails["LM"]))
+
+		custom_rows = frappe.get_all("Custom DocPerm", filters={"parent": "Item"}, pluck="role")
+		self.assertEqual(custom_rows.count("Lab Manager"), 1)
+		self.assertIn("Item Manager", custom_rows)
+
 	def test_lab_manager_saves_test_template_with_panel_and_consumable(self):
 		"""BR-1.10 SC1: Lab Manager saves a template with a panel row and a stock consumable, then reloads it."""
 		stock_item = _insert(

@@ -168,8 +168,31 @@ def ensure_lab_manager_item_read():
 
     The consumables table on Lab Test Template links to Item. Without read on Item, the link
     picker cannot search stock items for a Lab Manager. Only read is granted: no write, no delete.
-    The Custom DocPerm row is created once and left alone on later migrates.
+
+    Frappe uses Custom DocPerm rows instead of standard DocPerm once any exist for a DocType. So
+    before the first Custom DocPerm row is written, the standard Item rows are copied across. Otherwise
+    every other role would lose its Item access. The copy runs only while no Custom DocPerm rows
+    exist for Item apart from Lab Manager's, so later migrates leave it alone.
     """
+    custom_rows = frappe.get_all("Custom DocPerm", filters={"parent": "Item"}, pluck="role")
+    if set(custom_rows) - {"Lab Manager"}:
+        _ensure_lab_manager_item_row()
+        return
+    _copy_standard_item_perms(exclude_roles=set(custom_rows))
+    _ensure_lab_manager_item_row()
+
+
+def _copy_standard_item_perms(exclude_roles):
+    """Copy every standard DocPerm row on Item into Custom DocPerm, skipping roles already present."""
+    meta_fields = {"name", "owner", "creation", "modified", "modified_by", "docstatus", "idx"}
+    for perm in frappe.get_all("DocPerm", filters={"parent": "Item"}, fields="*"):
+        if perm.role in exclude_roles:
+            continue
+        row = {key: value for key, value in perm.items() if key not in meta_fields}
+        frappe.get_doc({**row, "doctype": "Custom DocPerm"}).insert(ignore_permissions=True)
+
+
+def _ensure_lab_manager_item_row():
     if frappe.db.exists("Custom DocPerm", {"parent": "Item", "role": "Lab Manager", "permlevel": 0}):
         return
     frappe.get_doc(
