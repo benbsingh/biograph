@@ -102,7 +102,9 @@ def insert_observation(selected, sample_collection, component_observations=None,
 		selected = json.loads(selected)
 		if component_observations and len(component_observations) > 0:
 			component_observations = json.loads(component_observations)
-		comp_obs_ref = create_specimen(sample_col_doc.get("patient"), selected, component_observations)
+		comp_obs_ref = create_specimen(
+			sample_col_doc.get("patient"), selected, component_observations, sample_collection
+		)
 		for i, obs in enumerate(selected):
 			parent_observation = obs.get("component_observation_parent")
 
@@ -217,7 +219,7 @@ def insert_observation(selected, sample_collection, component_observations=None,
 	)
 
 
-def create_specimen(patient, selected, component_observations):
+def create_specimen(patient, selected, component_observations, sample_collection=None):
 	groups = {}
 	# to group by
 	for sel in selected:
@@ -246,6 +248,7 @@ def create_specimen(patient, selected, component_observations):
 		specimen = frappe.new_doc("Specimen")
 		specimen.received_time = now_datetime()
 		specimen.patient = patient
+		specimen.sample = sample_collection
 		specimen.specimen_type = groups[gr][0].get("sample") or groups[gr][0].get("sample_type")
 		specimen.save()
 		for sub_grp in groups[gr]:
