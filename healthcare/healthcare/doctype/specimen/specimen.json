@@ -15,6 +15,7 @@
   "barcode",
   "section_break_auky",
   "patient",
+  "sample",
   "patient_name",
   "column_break_1kvr",
   "patient_age",
@@ -67,6 +68,13 @@
    "fieldtype": "Link",
    "label": "Patient",
    "options": "Patient"
+  },
+  {
+   "fieldname": "sample",
+   "fieldtype": "Link",
+   "label": "Sample ID",
+   "options": "Sample Collection",
+   "read_only": 1
   },
   {
    "fetch_from": "patient.patient_name",

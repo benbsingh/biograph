@@ -2,7 +2,7 @@
  "actions": [],
  "allow_events_in_timeline": 1,
  "allow_import": 1,
- "allow_rename": 1,
+ "allow_rename": 0,
  "autoname": "naming_series:",
  "creation": "2017-01-23 14:03:49.084370",
  "description": "Patient",
