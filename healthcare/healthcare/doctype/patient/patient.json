@@ -659,44 +659,55 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
-   "share": 1,
+   "share": 0,
    "write": 1
   },
   {
    "create": 1,
-   "delete": 1,
    "email": 1,
    "export": 1,
    "print": 1,
    "read": 1,
    "report": 1,
    "role": "Physician",
-   "share": 1,
+   "share": 0,
    "write": 1
   },
   {
-   "create": 1,
-   "delete": 1,
    "email": 1,
    "export": 1,
    "print": 1,
    "read": 1,
    "report": 1,
    "role": "Laboratory User",
-   "share": 1,
-   "write": 1
+   "share": 0
   },
   {
-   "create": 1,
-   "delete": 1,
    "email": 1,
    "export": 1,
    "print": 1,
    "read": 1,
    "report": 1,
    "role": "Nursing User",
-   "share": 1,
+   "share": 0,
    "write": 1
+  },
+  {
+   "create": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Healthcare Administrator",
+   "write": 1
+  },
+  {
+   "print": 1,
+   "read": 1,
+   "role": "LabTest Approver"
+  },
+  {
+   "print": 1,
+   "read": 1,
+   "role": "Lab Manager"
   }
  ],
  "quick_entry": 1,

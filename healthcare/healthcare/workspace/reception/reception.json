@@ -6,7 +6,7 @@
    "label": "Patient Appointments"
   }
  ],
- "content": "[{\"id\":\"f1f8e3812a\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Total Patients\",\"col\":3}},{\"id\":\"326087361e\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Total Patients Admitted\",\"col\":3}},{\"id\":\"e507c90d85\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Appointments to Bill\",\"col\":3}},{\"id\":\"W_ecjnZRES\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Today Appointment\",\"col\":3}},{\"id\":\"IPK_0OJyFF\",\"type\":\"chart\",\"data\":{\"chart_name\":\"Patient Appointments\",\"col\":12}},{\"id\":\"fKaNGh_f3X\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"LCsKfCbHFS\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Your Shortcuts</span>\",\"col\":12}},{\"id\":\"2vSa-kjLzn\",\"type\":\"custom_block\",\"data\":{\"custom_block_name\":\"Queue Display\",\"col\":12}},{\"id\":\"gtytowgpr9\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Patient Appointment\",\"col\":4}},{\"id\":\"l1jJQ_UAFs\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Payment Entry\",\"col\":4}},{\"id\":\"cgh4dqonE3\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Patient\",\"col\":4}},{\"id\":\"HguyRwIoFA\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Sales Invoice\",\"col\":4}},{\"id\":\"g8dhAbd9ao\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Inpatient Record\",\"col\":4}},{\"id\":\"a7VrU8gC6I\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Appointment Queue Status\",\"col\":4}},{\"id\":\"QAyRuJGfxG\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"-K7NMpJiTM\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Reports &amp; Masters</span>\",\"col\":12}},{\"id\":\"M1PT6PedBj\",\"type\":\"card\",\"data\":{\"card_name\":\"Masters\",\"col\":4}},{\"id\":\"51eVEiCjvf\",\"type\":\"card\",\"data\":{\"card_name\":\"Consultation\",\"col\":4}},{\"id\":\"PwTxarr1_m\",\"type\":\"card\",\"data\":{\"card_name\":\"Inpatient\",\"col\":4}},{\"id\":\"W-3YAoPKn-\",\"type\":\"card\",\"data\":{\"card_name\":\"Rehabilitation and Physiotherapy\",\"col\":4}},{\"id\":\"jC32DydzyL\",\"type\":\"card\",\"data\":{\"card_name\":\"Laboratory\",\"col\":4}},{\"id\":\"RpNZclbOqI\",\"type\":\"card\",\"data\":{\"card_name\":\"Reports\",\"col\":4}}]",
+ "content": "[{\"id\":\"f1f8e3812a\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Total Patients\",\"col\":3}},{\"id\":\"326087361e\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Total Patients Admitted\",\"col\":3}},{\"id\":\"e507c90d85\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Appointments to Bill\",\"col\":3}},{\"id\":\"W_ecjnZRES\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Today Appointment\",\"col\":3}},{\"id\":\"IPK_0OJyFF\",\"type\":\"chart\",\"data\":{\"chart_name\":\"Patient Appointments\",\"col\":12}},{\"id\":\"fKaNGh_f3X\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"LCsKfCbHFS\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Your Shortcuts</span>\",\"col\":12}},{\"id\":\"2vSa-kjLzn\",\"type\":\"custom_block\",\"data\":{\"custom_block_name\":\"Queue Display\",\"col\":12}},{\"id\":\"gtytowgpr9\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Patient Appointment\",\"col\":4}},{\"id\":\"l1jJQ_UAFs\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Payment Entry\",\"col\":4}},{\"id\":\"cgh4dqonE3\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Patient\",\"col\":4}},{\"id\":\"HguyRwIoFA\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Sales Invoice\",\"col\":4}},{\"id\":\"g8dhAbd9ao\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Inpatient Record\",\"col\":4}},{\"id\":\"a7VrU8gC6I\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Appointment Queue Status\",\"col\":4}},{\"id\":\"QAyRuJGfxG\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"-K7NMpJiTM\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Reports &amp; Masters</span>\",\"col\":12}},{\"id\":\"M1PT6PedBj\",\"type\":\"card\",\"data\":{\"card_name\":\"Masters\",\"col\":4}},{\"id\":\"51eVEiCjvf\",\"type\":\"card\",\"data\":{\"card_name\":\"Consultation\",\"col\":4}},{\"id\":\"PwTxarr1_m\",\"type\":\"card\",\"data\":{\"card_name\":\"Inpatient\",\"col\":4}},{\"id\":\"W-3YAoPKn-\",\"type\":\"card\",\"data\":{\"card_name\":\"Rehabilitation and Physiotherapy\",\"col\":4}},{\"id\":\"RpNZclbOqI\",\"type\":\"card\",\"data\":{\"card_name\":\"Reports\",\"col\":4}}]",
  "creation": "2026-03-18 13:58:34.379316",
  "custom_blocks": [
   {
@@ -83,26 +83,6 @@
    "label": "Patient Encounter",
    "link_count": 0,
    "link_to": "Patient Encounter",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Laboratory",
-   "link_count": 0,
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Card Break"
-  },
-  {
-   "dependencies": "",
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Lab Test",
-   "link_count": 0,
-   "link_to": "Lab Test",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
@@ -270,7 +250,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-04-06 13:16:15.855768",
+ "modified": "2026-11-25 14:35:33.213851",
  "modified_by": "Administrator",
  "module": "Healthcare",
  "name": "Reception",

@@ -112,7 +112,27 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
-   "share": 1,
+   "share": 0,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Laboratory User",
+   "write": 1
+  },
+  {
+   "print": 1,
+   "read": 1,
+   "role": "LabTest Approver",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Lab Manager",
    "write": 1
   }
  ],
