@@ -3,9 +3,8 @@ from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 
 def execute_migrate():
-    custom_fields = {
-
-        "Notification" : [
+	custom_fields = {
+		"Notification": [
 			{
 				"fieldname": "is_recurring_appointment",
 				"label": "Is Recurring Appointments Notifications ?",
@@ -13,12 +12,12 @@ def execute_migrate():
 				"insert_after": "channel",
 			},
 		],
-		"Patient Appointment" : [
+		"Patient Appointment": [
 			{
 				"fieldname": "recurring_appointments",
 				"label": "Recurring Appointments",
 				"fieldtype": "Check",
-				"hidden" : 1
+				"hidden": 1,
 			}
 		],
 		"Sales Invoice": [
@@ -140,23 +139,61 @@ def execute_migrate():
 				"no_copy": True,
 			},
 		],
-    }
+	}
 
-    create_custom_fields(custom_fields)
-    ensure_lab_manager_role()
+	create_custom_fields(custom_fields)
+	ensure_lab_manager_role()
+	ensure_lab_manager_item_read()
 
-    print("Custom fields for Healthcare Insurance and Referral Practitioner Integration created successfully")
+	print("Custom fields for Healthcare Insurance and Referral Practitioner Integration created successfully")
 
 
 def ensure_lab_manager_role():
-    """Create the "Lab Manager" role if it is missing. Runs on every `bench migrate`.
+	"""Create the "Lab Manager" role if it is missing. Runs on every `bench migrate`.
 
-    healthcare/setup.py does not create this role, so migrate is the place that creates it,
-    on fresh installs and on existing sites alike. It is idempotent: an existing role is left
-    unchanged, so re-running migrate is safe.
-    """
-    if frappe.db.exists("Role", "Lab Manager"):
-        return
-    frappe.get_doc({"doctype": "Role", "role_name": "Lab Manager", "desk_access": 1}).insert(
-        ignore_permissions=True
-    )
+	healthcare/setup.py does not create this role, so migrate is the place that creates it,
+	on fresh installs and on existing sites alike. It is idempotent: an existing role is left
+	unchanged, so re-running migrate is safe.
+	"""
+	if frappe.db.exists("Role", "Lab Manager"):
+		return
+	frappe.get_doc({"doctype": "Role", "role_name": "Lab Manager", "desk_access": 1}).insert(
+		ignore_permissions=True
+	)
+
+
+def ensure_lab_manager_item_read():
+	"""Grant the "Lab Manager" role read-only access to Item. Runs on every `bench migrate`.
+
+	The consumables table on Lab Test Template links to Item. Without read on Item, the link
+	picker cannot search stock items for a Lab Manager. Only read is granted: no write, no delete.
+
+	Frappe uses Custom DocPerm rows instead of standard DocPerm once any exist for a DocType. So
+	before the first Custom DocPerm row is written, the standard Item rows are copied across. Otherwise
+	every other role would lose its Item access. The copy runs only while no Custom DocPerm rows
+	exist for Item apart from Lab Manager's, so later migrates leave it alone.
+	"""
+	custom_rows = frappe.get_all("Custom DocPerm", filters={"parent": "Item"}, pluck="role")
+	if set(custom_rows) - {"Lab Manager"}:
+		_ensure_lab_manager_item_row()
+		return
+	_copy_standard_item_perms(exclude_roles=set(custom_rows))
+	_ensure_lab_manager_item_row()
+
+
+def _copy_standard_item_perms(exclude_roles):
+	"""Copy every standard DocPerm row on Item into Custom DocPerm, skipping roles already present."""
+	meta_fields = {"name", "owner", "creation", "modified", "modified_by", "docstatus", "idx"}
+	for perm in frappe.get_all("DocPerm", filters={"parent": "Item"}, fields="*"):
+		if perm.role in exclude_roles:
+			continue
+		row = {key: value for key, value in perm.items() if key not in meta_fields}
+		frappe.get_doc({**row, "doctype": "Custom DocPerm"}).insert(ignore_permissions=True)
+
+
+def _ensure_lab_manager_item_row():
+	if frappe.db.exists("Custom DocPerm", {"parent": "Item", "role": "Lab Manager", "permlevel": 0}):
+		return
+	frappe.get_doc(
+		{"doctype": "Custom DocPerm", "parent": "Item", "role": "Lab Manager", "permlevel": 0, "read": 1}
+	).insert(ignore_permissions=True)
